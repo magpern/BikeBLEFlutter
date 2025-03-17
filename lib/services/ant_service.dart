@@ -77,14 +77,81 @@ class AntService {
       characteristicId: BleConstants.scanResultsChar, // 0x1602
     );
 
-    _ble.writeCharacteristicWithResponse(controlChar, value: [0x01]); // ✅ Start Scan
+    print("📡 Subscribing to ANT+ scan results (0x1602) before starting scan...");
+    Stream<List<int>> notificationStream = _ble.subscribeToCharacteristic(resultsChar);
 
-    return _ble.subscribeToCharacteristic(resultsChar).map((data) {
+    Future.delayed(const Duration(milliseconds: 500), () {
+      print("📡 Sending `0x01` to `0x1601` to start scanning...");
+      _ble.writeCharacteristicWithResponse(controlChar, value: [0x01]);
+    });
+
+    return notificationStream.map((data) {
       if (data.length < 3) return {};
+
+      final deviceId = data[0] | (data[1] << 8); // Convert to Little Endian
+      final rssi = data[2];
+
+      print("✅ ANT+ Device Found: ID=$deviceId, RSSI=$rssi dBm");
       return {
-        "deviceId": data[0] | (data[1] << 8), // Convert to Little Endian
-        "rssi": data[2],
+        "deviceId": deviceId,
+        "rssi": rssi,
       };
     });
   }
+
+  /// ✅ Disconnect from BLE device
+  Future<void> disconnectDevice(String deviceId) async {
+    try {
+      print("🔌 Disconnecting from BLE device: $deviceId...");
+
+      // ✅ Clear GATT cache to ensure services are reset
+      await _ble.clearGattCache(deviceId);
+
+      // ✅ Deinitialize BLE device
+      await _ble.deinitialize();
+
+      print("✅ BLE Disconnected Successfully.");
+    } catch (e) {
+      print("❌ Error disconnecting BLE: $e");
+    }
+  }
+  /// ✅ Stop ANT+ Scanning (Send `0x02` to `0x1601`)
+  Future<void> stopAntSearch(String deviceId) async {
+    final controlChar = QualifiedCharacteristic(
+      deviceId: deviceId,
+      serviceId: BleConstants.customService,
+      characteristicId: BleConstants.scanControlChar, // 0x1601
+    );
+
+    try {
+      print("🛑 Sending `0x02` to `0x1601` to stop ANT+ scanning...");
+      await _ble.writeCharacteristicWithResponse(controlChar, value: [0x02]);
+      print("✅ ANT+ Scanning Stopped.");
+    } catch (e) {
+      print("❌ Failed to stop ANT+ scanning: $e");
+      throw e;
+    }
+  }
+
+  /// ✅ Save Selected ANT+ Device to `0x1603`
+  Future<void> saveSelectedAntDevice(String deviceId, int antDeviceId) async {
+    final characteristic = QualifiedCharacteristic(
+      deviceId: deviceId,
+      serviceId: BleConstants.customService,
+      characteristicId: BleConstants.selectDeviceCharUuid, // 0x1603
+    );
+
+    List<int> value = [antDeviceId & 0xFF, (antDeviceId >> 8) & 0xFF]; // Little Endian format
+
+    try {
+      print("💾 Writing ANT+ Device ID to 0x1603: $antDeviceId...");
+      await _ble.writeCharacteristicWithResponse(characteristic, value: value);
+      print("✅ Successfully wrote to 0x1603!");
+    } catch (e) {
+      print("❌ Error writing to 0x1603: $e");
+      throw e;
+    }
+  }
+
+
 }

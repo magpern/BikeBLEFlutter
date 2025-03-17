@@ -19,6 +19,8 @@ class BleScanScreenState extends State<BleScanScreen> {
   bool? _isBluetoothEnabled;
   bool _bleStatusChecked = false;
   StreamSubscription<BleStatus>? _bleStatusSubscription;
+  String? _previouslySelectedDeviceId; // ✅ Store Previously Selected Device
+  Timer? _scanTimeoutTimer;
 
   @override
   void initState() {
@@ -29,6 +31,7 @@ class BleScanScreenState extends State<BleScanScreen> {
   @override
   void dispose() {
     _bleStatusSubscription?.cancel();
+    _scanTimeoutTimer?.cancel(); // ✅ Ensure Timer is Cancelled
     super.dispose();
   }
 
@@ -72,18 +75,57 @@ class BleScanScreenState extends State<BleScanScreen> {
     _bleService.scanForDevices().listen((devices) {
       if (mounted) {
         setState(() {
-          _devices = devices;
+          _devices = _sortDevices(devices);
         });
       }
     });
+
+    // ✅ Stop scan automatically after 10 seconds
+    _scanTimeoutTimer = Timer(const Duration(seconds: 10), _stopScan);
   }
 
   void _stopScan() {
     setState(() {
       _isScanning = false;
-      _devices.clear();
+      _scanTimeoutTimer?.cancel();
     });
   }
+
+  /// ✅ Sort devices, moving previously selected device to the top
+  List<DiscoveredDevice> _sortDevices(List<DiscoveredDevice> devices) {
+    devices.sort((a, b) {
+      if (a.id == _previouslySelectedDeviceId) return -1;
+      if (b.id == _previouslySelectedDeviceId) return 1;
+      return 0;
+    });
+    return devices;
+  }
+
+  /// ✅ Select BLE Device and Navigate to a New Instance of Device Details Screen
+  void _selectDevice(DiscoveredDevice device) {
+    print("✅ Selected BLE Device: ${device.id}");
+
+    // ✅ Stop scanning when a device is selected
+    _stopScan();
+
+    setState(() {
+      _previouslySelectedDeviceId = device.id; // ✅ Store selection for future scans
+    });
+
+    // ✅ Ensure a New Screen is Created Each Time
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => DeviceDetailsScreen(device: device),
+        settings: RouteSettings(name: "/device_details_${device.id}_${DateTime.now().millisecondsSinceEpoch}"), // ✅ Forces new instance
+      ),
+    ).then((_) {
+      // ✅ Ensure BLE scanning resets when returning to this page
+      setState(() {
+        _isScanning = false;
+      });
+    });
+  } 
 
   @override
   Widget build(BuildContext context) {
@@ -128,7 +170,7 @@ class BleScanScreenState extends State<BleScanScreen> {
 
           // ✅ Scan Button
           ElevatedButton(
-            onPressed: _isBluetoothEnabled == true ? _toggleScan : null, 
+            onPressed: _isBluetoothEnabled == true ? _toggleScan : null,
             child: Text(_isScanning ? "Stop Scanning" : "Find Your BikeBLE Device"),
           ),
 
@@ -142,26 +184,36 @@ class BleScanScreenState extends State<BleScanScreen> {
               ),
             ),
 
-          // ✅ BLE Device List (Now opens details screen on tap)
+          // ✅ BLE Device List (With "Select" Button, ANT+ Icon & RSSI)
           Expanded(
-            child: ListView.builder(
-              itemCount: _devices.length,
-              itemBuilder: (context, index) {
-                final device = _devices[index];
-                return ListTile(
-                  title: Text(device.name.isNotEmpty ? device.name : "Unknown Device"),
-                  subtitle: Text("ID: ${device.id}"),
-                  onTap: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => DeviceDetailsScreen(device: device),
-                      ),
-                    );
-                  },
-                );
-              },
-            ),
+            child: _devices.isEmpty
+                ? _isScanning
+                    ? const Padding(
+                        padding: EdgeInsets.only(top: 10), // ✅ Subtle Spinner Positioning
+                        child: CircularProgressIndicator(),
+                      )
+                    : const SizedBox() // ✅ No spinner when scanning is off
+                : ListView.builder(
+                    itemCount: _devices.length,
+                    itemBuilder: (context, index) {
+                      final device = _devices[index];
+                      return ListTile(
+                        leading: const Icon(Icons.directions_bike, color: Colors.blue), // ✅ ANT+ Bike Icon
+                        title: Text(device.name.isNotEmpty ? device.name : "Unknown Device"),
+                        subtitle: Row(
+                          children: [
+                            const Icon(Icons.wifi, color: Colors.green), // ✅ RSSI Icon
+                            const SizedBox(width: 5),
+                            Text("RSSI: ${device.rssi} dBm"),
+                          ],
+                        ),
+                        trailing: ElevatedButton(
+                          onPressed: () => _selectDevice(device),
+                          child: const Text("Select"), // ✅ Button stays "Select"
+                        ),
+                      );
+                    },
+                  ),
           ),
         ],
       ),

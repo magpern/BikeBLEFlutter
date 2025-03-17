@@ -26,4 +26,15 @@ class BleConstants {
   // ✅ Battery Service (0x180F) & Battery Level Characteristic (0x2A19)
   static final Uuid batteryService = Uuid.parse("0000180F-0000-1000-8000-00805f9b34fb");
   static final Uuid batteryLevelChar = Uuid.parse("00002A19-0000-1000-8000-00805f9b34fb");
+
+  // Getters for each UUID
+  static Uuid get ftmsServiceUuid => ftmsService;
+  static Uuid get customServiceUuid => customService;
+  static Uuid get deviceInfoServiceUuid => deviceInfoService;
+  static Uuid get manufacturerCharUuid => manufacturerChar;
+  static Uuid get scanControlCharUuid => scanControlChar;
+  static Uuid get scanResultsCharUuid => scanResultsChar;
+  static Uuid get selectDeviceCharUuid => selectDeviceChar;
+  static Uuid get batteryServiceUuid => batteryService;
+  static Uuid get batteryLevelCharUuid => batteryLevelChar;
 }
