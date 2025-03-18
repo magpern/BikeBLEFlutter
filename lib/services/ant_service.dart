@@ -129,7 +129,7 @@ class AntService {
       print("✅ ANT+ Scanning Stopped.");
     } catch (e) {
       print("❌ Failed to stop ANT+ scanning: $e");
-      throw e;
+      rethrow;
     }
   }
 
@@ -149,7 +149,7 @@ class AntService {
       print("✅ Successfully wrote to 0x1603!");
     } catch (e) {
       print("❌ Error writing to 0x1603: $e");
-      throw e;
+      rethrow;
     }
   }
 
