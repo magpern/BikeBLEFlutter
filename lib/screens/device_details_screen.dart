@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_reactive_ble/flutter_reactive_ble.dart';
+import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import '../services/ant_service.dart';
 
 class DeviceDetailsScreen extends StatefulWidget {
-  final DiscoveredDevice device;
+  final BluetoothDevice device;
 
   const DeviceDetailsScreen({super.key, required this.device});
 
@@ -29,10 +29,10 @@ class DeviceDetailsScreenState extends State<DeviceDetailsScreen> {
   Future<void> _fetchDeviceInfo() async {
     try {
       // ✅ 1. Read Battery Level First
-      final batteryStatus = await _antService.getBatteryLevel(widget.device.id);
+      final batteryStatus = await _antService.getBatteryLevel(widget.device);
 
       // ✅ 2. Read Device Info (ID & Name)
-      final deviceInfo = await _antService.getDeviceInfo(widget.device.id);
+      final deviceInfo = await _antService.getDeviceInfo(widget.device);
       final deviceName = deviceInfo["deviceName"];
       final deviceId = deviceInfo["deviceId"];
 
@@ -59,7 +59,7 @@ class DeviceDetailsScreenState extends State<DeviceDetailsScreen> {
 
   /// ✅ Starts ANT+ Device Search
   void _startAntSearch() {
-    _antService.startAntSearch(widget.device.id).listen((antDevice) {
+    _antService.startAntSearch(widget.device).listen((antDevice) {
       if (mounted) {
         setState(() {
           _antDevices.add(antDevice);
@@ -88,11 +88,11 @@ class DeviceDetailsScreenState extends State<DeviceDetailsScreen> {
                 Navigator.of(context).pop(); // Close dialog
 
                 print("🛑 Stopping ANT+ scan...");
-                await _antService.stopAntSearch(widget.device.id); // ✅ Stop scanning before saving
+                await _antService.stopAntSearch(widget.device); // ✅ Stop scanning before saving
 
                 print("💾 Saving ANT+ Device ID: $antDeviceId...");
                 try {
-                  await _antService.saveSelectedAntDevice(widget.device.id, antDeviceId);
+                  await _antService.saveSelectedAntDevice(widget.device, antDeviceId);
                   print("✅ ANT+ Device ID saved successfully!");
 
                   ScaffoldMessenger.of(context).showSnackBar(
@@ -119,14 +119,14 @@ class DeviceDetailsScreenState extends State<DeviceDetailsScreen> {
     print("🔌 Stopping ANT+ search before closing BLE connection...");
 
     try {
-      await _antService.stopAntSearch(widget.device.id); // ✅ Stop ANT+ scanning first
+      await _antService.stopAntSearch(widget.device); // ✅ Stop ANT+ scanning first
     } catch (e) {
       print("❌ Failed to stop ANT+ search: $e");
     }
 
     print("🔌 Disconnecting BLE connection...");
     try {
-      await _antService.disconnectDevice(widget.device.id); // ✅ Properly disconnect BLE
+      await _antService.disconnectDevice(widget.device); // ✅ Properly disconnect BLE
     } catch (e) {
       print("❌ Failed to disconnect BLE: $e");
     }
@@ -150,7 +150,7 @@ class DeviceDetailsScreenState extends State<DeviceDetailsScreen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text("🔋 Battery: $_batteryStatus", style: const TextStyle(fontSize: 18)),
-                      Text("📶 Signal Strength: ${widget.device.rssi} dBm", style: const TextStyle(fontSize: 18)),
+                      Text("📶 Signal Strength: ${widget.device.remoteId}", style: const TextStyle(fontSize: 18)),
                       Text("🔢 Current Device ID: $_deviceId", style: const TextStyle(fontSize: 18)),
                     ],
                   ),

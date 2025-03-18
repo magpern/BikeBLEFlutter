@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_reactive_ble/flutter_reactive_ble.dart';
+import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'dart:async';
 import '../services/ble_service.dart';
@@ -14,12 +14,12 @@ class BleScanScreen extends StatefulWidget {
 
 class BleScanScreenState extends State<BleScanScreen> {
   final BleService _bleService = BleService();
-  List<DiscoveredDevice> _devices = [];
+  List<BluetoothDevice> _devices = [];
   bool _isScanning = false;
   bool? _isBluetoothEnabled;
   bool _bleStatusChecked = false;
-  StreamSubscription<BleStatus>? _bleStatusSubscription;
-  String? _previouslySelectedDeviceId; // ✅ Store Previously Selected Device
+  StreamSubscription<BluetoothAdapterState>? _bleStatusSubscription;
+  DeviceIdentifier? _previouslySelectedDeviceId;
   Timer? _scanTimeoutTimer;
 
   @override
@@ -37,9 +37,9 @@ class BleScanScreenState extends State<BleScanScreen> {
 
   /// ✅ Check Bluetooth status and update UI
   void _checkBluetoothStatus() {
-    _bleStatusSubscription = FlutterReactiveBle().statusStream.listen((status) {
+    _bleStatusSubscription = FlutterBluePlus.adapterState.listen((state) {
       setState(() {
-        _isBluetoothEnabled = (status == BleStatus.ready);
+        _isBluetoothEnabled = (state == BluetoothAdapterState.on);
         _bleStatusChecked = true;
       });
     });
@@ -92,24 +92,23 @@ class BleScanScreenState extends State<BleScanScreen> {
   }
 
   /// ✅ Sort devices, moving previously selected device to the top
-  List<DiscoveredDevice> _sortDevices(List<DiscoveredDevice> devices) {
+  List<BluetoothDevice> _sortDevices(List<BluetoothDevice> devices) {
     devices.sort((a, b) {
-      if (a.id == _previouslySelectedDeviceId) return -1;
-      if (b.id == _previouslySelectedDeviceId) return 1;
+      if (a.remoteId == _previouslySelectedDeviceId) return -1;
+      if (b.remoteId == _previouslySelectedDeviceId) return 1;
       return 0;
     });
     return devices;
   }
 
   /// ✅ Select BLE Device and Navigate to a New Instance of Device Details Screen
-  void _selectDevice(DiscoveredDevice device) {
-    print("✅ Selected BLE Device: ${device.id}");
+  void _selectDevice(BluetoothDevice device) {
+    print("✅ Selected BLE Device: ${device.remoteId}");
 
-    // ✅ Stop scanning when a device is selected
     _stopScan();
 
     setState(() {
-      _previouslySelectedDeviceId = device.id; // ✅ Store selection for future scans
+      _previouslySelectedDeviceId = device.remoteId;
     });
 
     // ✅ Ensure a New Screen is Created Each Time
@@ -117,7 +116,7 @@ class BleScanScreenState extends State<BleScanScreen> {
       context,
       MaterialPageRoute(
         builder: (context) => DeviceDetailsScreen(device: device),
-        settings: RouteSettings(name: "/device_details_${device.id}_${DateTime.now().millisecondsSinceEpoch}"), // ✅ Forces new instance
+        settings: RouteSettings(name: "/device_details_${device.remoteId}_${DateTime.now().millisecondsSinceEpoch}"), // ✅ Forces new instance
       ),
     ).then((_) {
       // ✅ Ensure BLE scanning resets when returning to this page
@@ -198,18 +197,12 @@ class BleScanScreenState extends State<BleScanScreen> {
                     itemBuilder: (context, index) {
                       final device = _devices[index];
                       return ListTile(
-                        leading: const Icon(Icons.directions_bike, color: Colors.blue), // ✅ ANT+ Bike Icon
-                        title: Text(device.name.isNotEmpty ? device.name : "Unknown Device"),
-                        subtitle: Row(
-                          children: [
-                            const Icon(Icons.wifi, color: Colors.green), // ✅ RSSI Icon
-                            const SizedBox(width: 5),
-                            Text("RSSI: ${device.rssi} dBm"),
-                          ],
-                        ),
+                        leading: const Icon(Icons.directions_bike, color: Colors.blue),
+                        title: Text(device.platformName.isNotEmpty ? device.platformName : "Unknown Device"),
+                        subtitle: Text("Device: ${device.platformName}"),
                         trailing: ElevatedButton(
                           onPressed: () => _selectDevice(device),
-                          child: const Text("Select"), // ✅ Button stays "Select"
+                          child: const Text("Select"),
                         ),
                       );
                     },

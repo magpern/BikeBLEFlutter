@@ -1,32 +1,54 @@
-import 'package:flutter_reactive_ble/flutter_reactive_ble.dart';
+import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import '../utils/ble_constants.dart';
 
 class BleService {
-  final FlutterReactiveBle _ble = FlutterReactiveBle();
-  final List<DiscoveredDevice> _foundDevices = [];
+  final List<BluetoothDevice> _foundDevices = [];
 
-  /// ✅ Scan for BLE devices advertising FTMS (0x1826) and Custom Service (0x1600)
-  Stream<List<DiscoveredDevice>> scanForDevices() {
-    _foundDevices.clear(); // Reset list before scanning
-    return _ble.scanForDevices(
-      withServices: [
-        BleConstants.ftmsService,    // ✅ FTMS (0x1826)
-        BleConstants.customService,  // ✅ Custom ANT+ BLE (0x1600)
-      ],
-      scanMode: ScanMode.lowLatency,
-    ).map((device) {
-      // ✅ Only add devices if they explicitly advertise FTMS or Custom ANT+ Service
-      if (_containsService(device, BleConstants.ftmsService) || _containsService(device, BleConstants.customService)) {
-        if (!_foundDevices.any((d) => d.id == device.id)) {
-          _foundDevices.add(device);
+  /// Scan for BLE devices advertising FTMS and Custom Service
+  Stream<List<BluetoothDevice>> scanForDevices() {
+    _foundDevices.clear();
+    
+    // Start scanning for all devices first
+    FlutterBluePlus.startScan(
+      timeout: const Duration(seconds: 10),
+    );
+    
+    // Create a stream that emits the current list of devices whenever new results come in
+    return FlutterBluePlus.scanResults.map((results) {
+      bool listChanged = false;
+      for (ScanResult r in results) {
+        print("Found device: ${r.device.platformName} (${r.device.remoteId})");
+        print("Services: ${r.advertisementData.serviceUuids}");
+        
+        // Check if device advertises our required services
+        if (r.advertisementData.serviceUuids.contains(BleConstants.ftmsService) ||
+            r.advertisementData.serviceUuids.contains(BleConstants.customService)) {
+          print("Found matching device: ${r.device.platformName}");
+          if (!_foundDevices.any((d) => d.remoteId == r.device.remoteId)) {
+            _foundDevices.add(r.device);
+            listChanged = true;
+          }
         }
       }
-      return List.from(_foundDevices);
+      if (listChanged) {
+        return List.from(_foundDevices);
+      }
+      return _foundDevices;
     });
   }
 
-  /// ✅ Helper Function: Check if a device advertises the given service
-  bool _containsService(DiscoveredDevice device, Uuid serviceUuid) {
-    return device.serviceUuids.contains(serviceUuid);
+  /// Start scanning
+  Future<void> startScan() async {
+    await FlutterBluePlus.startScan(
+      withServices: [
+        Guid(BleConstants.ftmsService.str),
+        Guid(BleConstants.customService.str),
+      ],
+    );
+  }
+
+  /// Stop scanning
+  Future<void> stopScan() async {
+    await FlutterBluePlus.stopScan();
   }
 }
