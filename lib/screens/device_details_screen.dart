@@ -150,7 +150,7 @@ class DeviceDetailsScreenState extends State<DeviceDetailsScreen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text("🔋 Battery: $_batteryStatus", style: const TextStyle(fontSize: 18)),
-                      Text("📶 Signal Strength: ${widget.device.remoteId}", style: const TextStyle(fontSize: 18)),
+                      Text("📶 Signal Strength: ${_antDevices.isNotEmpty ? _antDevices.first['rssi'] : 'N/A'} dBm", style: const TextStyle(fontSize: 18)),
                       Text("🔢 Current Device ID: $_deviceId", style: const TextStyle(fontSize: 18)),
                     ],
                   ),

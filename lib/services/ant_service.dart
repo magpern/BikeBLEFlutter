@@ -2,10 +2,31 @@ import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import '../utils/ble_constants.dart';
 
 class AntService {
+  bool _isConnected = false;
+
+  /// Connect to BLE device
+  Future<void> connectDevice(BluetoothDevice device) async {
+    if (_isConnected) {
+      print("✅ Already connected to BLE device");
+      return;
+    }
+
+    try {
+      print("🔌 Connecting to BLE device...");
+      await device.connect();
+      _isConnected = true;
+      print("✅ Connected to BLE device");
+    } catch (e) {
+      print("❌ Failed to connect to BLE device: $e");
+      rethrow;
+    }
+  }
+
   /// Get Battery Level (Read-Only)
   Future<String> getBatteryLevel(BluetoothDevice device) async {
     try {
       print("🔋 Requesting battery level...");
+      await connectDevice(device);
       final service = await device.discoverServices();
       final batteryService = service.firstWhere(
         (s) => s.serviceUuid == BleConstants.batteryService,
@@ -35,6 +56,7 @@ class AntService {
   Future<Map<String, dynamic>> getDeviceInfo(BluetoothDevice device) async {
     try {
       print("📡 Requesting Device ID & Name...");
+      await connectDevice(device);
       final services = await device.discoverServices();
       final service = services.firstWhere(
         (s) => s.serviceUuid == Guid("00001523-0000-1000-8000-00805f9b34fb"),
@@ -67,6 +89,7 @@ class AntService {
   /// Start ANT+ Search (0x01 to 0x1601, listen on 0x1602)
   Stream<Map<String, dynamic>> startAntSearch(BluetoothDevice device) async* {
     try {
+      await connectDevice(device);
       final services = await device.discoverServices();
       final customService = services.firstWhere(
         (s) => s.serviceUuid == BleConstants.customService,
@@ -83,12 +106,10 @@ class AntService {
       print("📡 Subscribing to ANT+ scan results (0x1602) before starting scan...");
       await resultsChar.setNotifyValue(true);
 
-      Future.delayed(const Duration(milliseconds: 500), () {
-        print("📡 Sending `0x01` to `0x1601` to start scanning...");
-        controlChar.write([0x01], withoutResponse: false);
-      });
+      print("📡 Sending `0x01` to `0x1601` to start scanning...");
+      await controlChar.write([0x01], withoutResponse: false);
 
-      await for (final data in resultsChar.value) {
+      await for (final data in resultsChar.lastValueStream) {
         if (data.length < 3) continue;
 
         final deviceId = data[0] | (data[1] << 8);
@@ -131,6 +152,7 @@ class AntService {
     try {
       print("🔌 Disconnecting BLE device...");
       await device.disconnect();
+      _isConnected = false;
       print("✅ BLE Disconnected Successfully.");
     } catch (e) {
       print("❌ Error disconnecting BLE: $e");
