@@ -105,9 +105,7 @@ class BleScanScreenState extends State<BleScanScreen> {
   void _selectDevice(BluetoothDevice device) {
     print("✅ Selected BLE Device: ${device.remoteId}");
 
-    // Stop scanning first
     _stopScan();
-    _bleService.stopScan(); // Add explicit call to stop BLE scanning
 
     setState(() {
       _previouslySelectedDeviceId = device.remoteId;

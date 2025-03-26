@@ -13,11 +13,13 @@ class AntService {
 
     try {
       print("🔌 Connecting to BLE device...");
-      await device.connect();
+      await device.connect(timeout: const Duration(seconds: 10));
+      await Future.delayed(const Duration(milliseconds: 1000)); // Give it time to stabilize
       _isConnected = true;
       print("✅ Connected to BLE device");
     } catch (e) {
       print("❌ Failed to connect to BLE device: $e");
+      _isConnected = false;
       rethrow;
     }
   }
