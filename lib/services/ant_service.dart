@@ -1,24 +1,49 @@
-import 'package:flutter_reactive_ble/flutter_reactive_ble.dart';
+import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import '../utils/ble_constants.dart';
 
 class AntService {
-  final FlutterReactiveBle _ble = FlutterReactiveBle();
+  bool _isConnected = false;
 
-  /// ✅ Get Battery Level (Read-Only)
-  Future<String> getBatteryLevel(String deviceId) async {
-    final characteristic = QualifiedCharacteristic(
-      deviceId: deviceId,
-      serviceId: BleConstants.batteryService, // 0x180F
-      characteristicId: BleConstants.batteryLevelChar, // 0x2A19
-    );
+  /// Connect to BLE device
+  Future<void> connectDevice(BluetoothDevice device) async {
+    if (_isConnected) {
+      print("✅ Already connected to BLE device");
+      return;
+    }
 
     try {
+      print("🔌 Connecting to BLE device...");
+      await device.connect(timeout: const Duration(seconds: 10));
+      await Future.delayed(const Duration(milliseconds: 1000)); // Give it time to stabilize
+      _isConnected = true;
+      print("✅ Connected to BLE device");
+    } catch (e) {
+      print("❌ Failed to connect to BLE device: $e");
+      _isConnected = false;
+      rethrow;
+    }
+  }
+
+  /// Get Battery Level (Read-Only)
+  Future<String> getBatteryLevel(BluetoothDevice device) async {
+    try {
       print("🔋 Requesting battery level...");
-      final response = await _ble.readCharacteristic(characteristic);
+      await connectDevice(device);
+      final service = await device.discoverServices();
+      final batteryService = service.firstWhere(
+        (s) => s.serviceUuid == BleConstants.batteryService,
+        orElse: () => throw Exception('Battery service not found'),
+      );
       
+      final characteristic = batteryService.characteristics.firstWhere(
+        (c) => c.characteristicUuid == BleConstants.batteryLevelChar,
+        orElse: () => throw Exception('Battery characteristic not found'),
+      );
+
+      final response = await characteristic.read();
       if (response.isNotEmpty) {
         print("✅ Battery Level Response: ${response[0]}%");
-        return "${response[0]}%"; // Battery percentage
+        return "${response[0]}%";
       } else {
         print("⚠️ Battery read was empty!");
         return "Unknown%";
@@ -29,34 +54,33 @@ class AntService {
     }
   }
 
-  /// ✅ Get Device ID & Name from `0x1524` (Read-Only)
-  Future<Map<String, dynamic>> getDeviceInfo(String deviceId) async {
-    final characteristic = QualifiedCharacteristic(
-      deviceId: deviceId,
-      serviceId: Uuid.parse("00001523-0000-1000-8000-00805f9b34fb"), // 0x1523
-      characteristicId: Uuid.parse("00001524-0000-1000-8000-00805f9b34fb"), // 0x1524
-    );
-
+  /// Get Device ID & Name from `0x1524` (Read-Only)
+  Future<Map<String, dynamic>> getDeviceInfo(BluetoothDevice device) async {
     try {
       print("📡 Requesting Device ID & Name...");
-      final response = await _ble.readCharacteristic(characteristic);
+      await connectDevice(device);
+      final services = await device.discoverServices();
+      final service = services.firstWhere(
+        (s) => s.serviceUuid == Guid("00001523-0000-1000-8000-00805f9b34fb"),
+      );
+      
+      final characteristic = service.characteristics.firstWhere(
+        (c) => c.characteristicUuid == Guid("00001524-0000-1000-8000-00805f9b34fb"),
+      );
 
+      final response = await characteristic.read();
       if (response.length < 3) {
         print("⚠️ Invalid response length: ${response.length}");
         return {"deviceId": "Unknown", "deviceName": "Unknown Device"};
       }
 
-      // ✅ Parse Little Endian Device ID (Bytes 0-1)
       int deviceIdValue = response[0] | (response[1] << 8);
-
-      // ✅ Parse Device Name (ASCII) (Bytes 3-N)
       int nameLength = response[2];
       String deviceName = response.length >= (3 + nameLength)
           ? String.fromCharCodes(response.sublist(3, 3 + nameLength))
           : "Unknown Device";
 
       print("✅ Device Info - ID: $deviceIdValue, Name: $deviceName");
-
       return {"deviceId": deviceIdValue.toString(), "deviceName": deviceName};
     } catch (e) {
       print("❌ Failed to read Device ID & Name: $e");
@@ -64,68 +88,60 @@ class AntService {
     }
   }
 
-  /// ✅ Start ANT+ Search (0x01 to 0x1601, listen on 0x1602)
-  Stream<Map<String, dynamic>> startAntSearch(String deviceId) {
-    final controlChar = QualifiedCharacteristic(
-      deviceId: deviceId,
-      serviceId: BleConstants.customService,
-      characteristicId: BleConstants.scanControlChar, // 0x1601
-    );
-    final resultsChar = QualifiedCharacteristic(
-      deviceId: deviceId,
-      serviceId: BleConstants.customService,
-      characteristicId: BleConstants.scanResultsChar, // 0x1602
-    );
-
-    print("📡 Subscribing to ANT+ scan results (0x1602) before starting scan...");
-    Stream<List<int>> notificationStream = _ble.subscribeToCharacteristic(resultsChar);
-
-    Future.delayed(const Duration(milliseconds: 500), () {
-      print("📡 Sending `0x01` to `0x1601` to start scanning...");
-      _ble.writeCharacteristicWithResponse(controlChar, value: [0x01]);
-    });
-
-    return notificationStream.map((data) {
-      if (data.length < 3) return {};
-
-      final deviceId = data[0] | (data[1] << 8); // Convert to Little Endian
-      final rssi = data[2];
-
-      print("✅ ANT+ Device Found: ID=$deviceId, RSSI=$rssi dBm");
-      return {
-        "deviceId": deviceId,
-        "rssi": rssi,
-      };
-    });
-  }
-
-  /// ✅ Disconnect from BLE device
-  Future<void> disconnectDevice(String deviceId) async {
+  /// Start ANT+ Search (0x01 to 0x1601, listen on 0x1602)
+  Stream<Map<String, dynamic>> startAntSearch(BluetoothDevice device) async* {
     try {
-      print("🔌 Disconnecting from BLE device: $deviceId...");
+      await connectDevice(device);
+      final services = await device.discoverServices();
+      final customService = services.firstWhere(
+        (s) => s.serviceUuid == BleConstants.customService,
+      );
+      
+      final controlChar = customService.characteristics.firstWhere(
+        (c) => c.characteristicUuid == BleConstants.scanControlChar,
+      );
+      
+      final resultsChar = customService.characteristics.firstWhere(
+        (c) => c.characteristicUuid == BleConstants.scanResultsChar,
+      );
 
-      // ✅ Clear GATT cache to ensure services are reset
-      await _ble.clearGattCache(deviceId);
+      print("📡 Subscribing to ANT+ scan results (0x1602) before starting scan...");
+      await resultsChar.setNotifyValue(true);
 
-      // ✅ Deinitialize BLE device
-      await _ble.deinitialize();
+      print("📡 Sending `0x01` to `0x1601` to start scanning...");
+      await controlChar.write([0x01], withoutResponse: false);
 
-      print("✅ BLE Disconnected Successfully.");
+      await for (final data in resultsChar.lastValueStream) {
+        if (data.length < 3) continue;
+
+        final deviceId = data[0] | (data[1] << 8);
+        final rssi = data[2];
+
+        print("✅ ANT+ Device Found: ID=$deviceId, RSSI=$rssi dBm");
+        yield {
+          "deviceId": deviceId,
+          "rssi": rssi,
+        };
+      }
     } catch (e) {
-      print("❌ Error disconnecting BLE: $e");
+      print("❌ Error in ANT+ search: $e");
     }
   }
-  /// ✅ Stop ANT+ Scanning (Send `0x02` to `0x1601`)
-  Future<void> stopAntSearch(String deviceId) async {
-    final controlChar = QualifiedCharacteristic(
-      deviceId: deviceId,
-      serviceId: BleConstants.customService,
-      characteristicId: BleConstants.scanControlChar, // 0x1601
-    );
 
+  /// Stop ANT+ Scanning
+  Future<void> stopAntSearch(BluetoothDevice device) async {
     try {
       print("🛑 Sending `0x02` to `0x1601` to stop ANT+ scanning...");
-      await _ble.writeCharacteristicWithResponse(controlChar, value: [0x02]);
+      final services = await device.discoverServices();
+      final customService = services.firstWhere(
+        (s) => s.serviceUuid == BleConstants.customService,
+      );
+      
+      final controlChar = customService.characteristics.firstWhere(
+        (c) => c.characteristicUuid == BleConstants.scanControlChar,
+      );
+
+      await controlChar.write([0x02], withoutResponse: false);
       print("✅ ANT+ Scanning Stopped.");
     } catch (e) {
       print("❌ Failed to stop ANT+ scanning: $e");
@@ -133,25 +149,38 @@ class AntService {
     }
   }
 
-  /// ✅ Save Selected ANT+ Device to `0x1603`
-  Future<void> saveSelectedAntDevice(String deviceId, int antDeviceId) async {
-    final characteristic = QualifiedCharacteristic(
-      deviceId: deviceId,
-      serviceId: BleConstants.customService,
-      characteristicId: BleConstants.selectDeviceCharUuid, // 0x1603
-    );
-
-    List<int> value = [antDeviceId & 0xFF, (antDeviceId >> 8) & 0xFF]; // Little Endian format
-
+  /// Disconnect BLE device
+  Future<void> disconnectDevice(BluetoothDevice device) async {
     try {
+      print("🔌 Disconnecting BLE device...");
+      await device.disconnect();
+      _isConnected = false;
+      print("✅ BLE Disconnected Successfully.");
+    } catch (e) {
+      print("❌ Error disconnecting BLE: $e");
+      rethrow;
+    }
+  }
+
+  /// Save Selected ANT+ Device to `0x1603`
+  Future<void> saveSelectedAntDevice(BluetoothDevice device, int antDeviceId) async {
+    try {
+      final services = await device.discoverServices();
+      final customService = services.firstWhere(
+        (s) => s.serviceUuid == BleConstants.customService,
+      );
+      
+      final characteristic = customService.characteristics.firstWhere(
+        (c) => c.characteristicUuid == BleConstants.selectDeviceChar,
+      );
+
+      List<int> value = [antDeviceId & 0xFF, (antDeviceId >> 8) & 0xFF];
       print("💾 Writing ANT+ Device ID to 0x1603: $antDeviceId...");
-      await _ble.writeCharacteristicWithResponse(characteristic, value: value);
+      await characteristic.write(value, withoutResponse: false);
       print("✅ Successfully wrote to 0x1603!");
     } catch (e) {
       print("❌ Error writing to 0x1603: $e");
       rethrow;
     }
   }
-
-
 }
