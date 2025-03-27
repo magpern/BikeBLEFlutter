@@ -1,7 +1,9 @@
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import '../utils/ble_constants.dart';
+import 'github_service.dart';
 
 class AntService {
+  final GitHubService _githubService = GitHubService();
   bool _isConnected = false;
 
   /// Connect to BLE device
@@ -236,41 +238,34 @@ class AntService {
   Future<Map<String, dynamic>> checkFirmwareUpdate(BluetoothDevice device) async {
     try {
       print("📡 Checking for firmware updates...");
-      await connectDevice(device);
-      final services = await device.discoverServices();
-      final service = services.firstWhere(
-        (s) => s.serviceUuid == BleConstants.customService,
-      );
       
-      final characteristic = service.characteristics.firstWhere(
-        (c) => c.characteristicUuid == BleConstants.firmwareUpdateChar,
-      );
-
-      // Send check update command (0x01)
-      await characteristic.write([0x01], withoutResponse: false);
-
-      // Wait for response (assuming it comes through the same characteristic)
-      final response = await characteristic.read();
-      if (response.length < 4) {
-        print("⚠️ Invalid update check response length: ${response.length}");
+      // Get current firmware version from device
+      final currentVersion = (await getFirmwareVersion(device))["currentVersion"];
+      
+      // Get latest version from GitHub
+      final githubRelease = await _githubService.getLatestRelease();
+      
+      if (!githubRelease['success']) {
+        print("❌ Failed to fetch GitHub release: ${githubRelease['error']}");
         return {
-          "latestVersion": "Unknown",
+          "latestVersion": "Unable to check for updates",
           "hasUpdate": false
         };
       }
 
-      String latestVersion = "${response[0]}.${response[1]}.${response[2]}";
-      bool hasUpdate = response[3] == 0x01;
+      final latestVersion = githubRelease['version'];
+      final hasUpdate = _githubService.isNewerVersion(currentVersion, latestVersion);
 
-      print("✅ Firmware Update Check - Latest: $latestVersion, Update Available: $hasUpdate");
+      print("✅ Firmware Update Check - Current: $currentVersion, Latest: $latestVersion, Update Available: $hasUpdate");
       return {
         "latestVersion": latestVersion,
-        "hasUpdate": hasUpdate
+        "hasUpdate": hasUpdate,
+        "downloadUrl": githubRelease['downloadUrl']
       };
     } catch (e) {
       print("❌ Failed to check firmware update: $e");
       return {
-        "latestVersion": "Unknown",
+        "latestVersion": "Unable to check for updates",
         "hasUpdate": false
       };
     }
