@@ -183,4 +183,119 @@ class AntService {
       rethrow;
     }
   }
+
+  /// Get Firmware Version Information
+  Future<Map<String, dynamic>> getFirmwareVersion(BluetoothDevice device) async {
+    try {
+      print("📡 Requesting firmware version...");
+      await connectDevice(device);
+      final services = await device.discoverServices();
+      
+      // Find Device Information Service (0x180A)
+      final deviceInfoService = services.firstWhere(
+        (s) => s.serviceUuid == BleConstants.deviceInfoService,
+        orElse: () => throw Exception('Device Information Service not found'),
+      );
+      
+      // Find Firmware Revision String Characteristic (0x2A26)
+      final characteristic = deviceInfoService.characteristics.firstWhere(
+        (c) => c.characteristicUuid == BleConstants.firmwareRevisionChar,
+        orElse: () => throw Exception('Firmware Revision String characteristic not found'),
+      );
+
+      final response = await characteristic.read();
+      if (response.isEmpty) {
+        print("⚠️ Empty firmware revision response");
+        return {
+          "currentVersion": "Unknown",
+          "latestVersion": "Unknown",
+          "hasUpdate": false
+        };
+      }
+
+      // Parse firmware version as UTF-8 string
+      String currentVersion = String.fromCharCodes(response);
+      print("✅ Firmware Version: $currentVersion");
+
+      return {
+        "currentVersion": currentVersion,
+        "latestVersion": "Unknown", // Will be updated when checking for updates
+        "hasUpdate": false // Will be updated when checking for updates
+      };
+    } catch (e) {
+      print("❌ Failed to read firmware version: $e");
+      return {
+        "currentVersion": "Unknown",
+        "latestVersion": "Unknown",
+        "hasUpdate": false
+      };
+    }
+  }
+
+  /// Check for Firmware Updates
+  Future<Map<String, dynamic>> checkFirmwareUpdate(BluetoothDevice device) async {
+    try {
+      print("📡 Checking for firmware updates...");
+      await connectDevice(device);
+      final services = await device.discoverServices();
+      final service = services.firstWhere(
+        (s) => s.serviceUuid == BleConstants.customService,
+      );
+      
+      final characteristic = service.characteristics.firstWhere(
+        (c) => c.characteristicUuid == BleConstants.firmwareUpdateChar,
+      );
+
+      // Send check update command (0x01)
+      await characteristic.write([0x01], withoutResponse: false);
+
+      // Wait for response (assuming it comes through the same characteristic)
+      final response = await characteristic.read();
+      if (response.length < 4) {
+        print("⚠️ Invalid update check response length: ${response.length}");
+        return {
+          "latestVersion": "Unknown",
+          "hasUpdate": false
+        };
+      }
+
+      String latestVersion = "${response[0]}.${response[1]}.${response[2]}";
+      bool hasUpdate = response[3] == 0x01;
+
+      print("✅ Firmware Update Check - Latest: $latestVersion, Update Available: $hasUpdate");
+      return {
+        "latestVersion": latestVersion,
+        "hasUpdate": hasUpdate
+      };
+    } catch (e) {
+      print("❌ Failed to check firmware update: $e");
+      return {
+        "latestVersion": "Unknown",
+        "hasUpdate": false
+      };
+    }
+  }
+
+  /// Update Firmware
+  Future<void> updateFirmware(BluetoothDevice device) async {
+    try {
+      print("📡 Starting firmware update...");
+      await connectDevice(device);
+      final services = await device.discoverServices();
+      final service = services.firstWhere(
+        (s) => s.serviceUuid == BleConstants.customService,
+      );
+      
+      final characteristic = service.characteristics.firstWhere(
+        (c) => c.characteristicUuid == BleConstants.firmwareUpdateChar,
+      );
+
+      // Send update command (0x02)
+      await characteristic.write([0x02], withoutResponse: false);
+      print("✅ Firmware update command sent");
+    } catch (e) {
+      print("❌ Failed to start firmware update: $e");
+      rethrow;
+    }
+  }
 }

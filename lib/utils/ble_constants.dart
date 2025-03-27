@@ -29,6 +29,15 @@ class BleConstants {
   // Battery Level Characteristic (0x2A19)
   static final Guid batteryLevelChar = Guid("00002A19-0000-1000-8000-00805f9b34fb");
 
+  // Firmware Version Characteristic (0x1604)
+  static final Guid firmwareVersionChar = Guid("00001604-0000-1000-8000-00805f9b34fb");
+
+  // Firmware Update Characteristic (0x1605)
+  static final Guid firmwareUpdateChar = Guid("00001605-0000-1000-8000-00805f9b34fb");
+
+  // Firmware Revision String Characteristic (0x2A26)
+  static final Guid firmwareRevisionChar = Guid("00002A26-0000-1000-8000-00805f9b34fb");
+
   // Getters for each UUID
   static Guid get ftmsServiceUuid => ftmsService;
   static Guid get customServiceUuid => customService;
@@ -39,4 +48,7 @@ class BleConstants {
   static Guid get selectDeviceCharUuid => selectDeviceChar;
   static Guid get batteryServiceUuid => batteryService;
   static Guid get batteryLevelCharUuid => batteryLevelChar;
+  static Guid get firmwareVersionCharUuid => firmwareVersionChar;
+  static Guid get firmwareUpdateCharUuid => firmwareUpdateChar;
+  static Guid get firmwareRevisionCharUuid => firmwareRevisionChar;
 }

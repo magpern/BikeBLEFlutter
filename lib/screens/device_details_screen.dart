@@ -16,6 +16,10 @@ class DeviceDetailsScreenState extends State<DeviceDetailsScreen> {
   String _deviceName = "Loading...";
   String _batteryStatus = "Loading...";
   String _deviceId = "Loading...";
+  String _currentFirmwareVersion = "Loading...";
+  String _latestFirmwareVersion = "Loading...";
+  bool _hasUpdateAvailable = false;
+  bool _isCheckingFirmware = false;
   final List<Map<String, dynamic>> _antDevices = [];
   bool _isFetchingData = true; // ✅ Track if data is still loading
 
@@ -39,16 +43,25 @@ class DeviceDetailsScreenState extends State<DeviceDetailsScreen> {
       // ✅ 3. Read Battery Level
       final batteryStatus = await _antService.getBatteryLevel(widget.device);
 
+      // ✅ 4. Read Firmware Version
+      final firmwareInfo = await _antService.getFirmwareVersion(widget.device);
+      final currentVersion = firmwareInfo["currentVersion"];
+      final latestVersion = firmwareInfo["latestVersion"];
+      final hasUpdate = firmwareInfo["hasUpdate"];
+
       if (mounted) {
         setState(() {
           _deviceName = deviceName;
           _batteryStatus = batteryStatus;
           _deviceId = deviceId;
+          _currentFirmwareVersion = currentVersion;
+          _latestFirmwareVersion = latestVersion;
+          _hasUpdateAvailable = hasUpdate;
           _isFetchingData = false;
         });
       }
 
-      // ✅ 4. Start ANT+ Device Search After Everything is Done
+      // ✅ 5. Start ANT+ Device Search After Everything is Done
       _startAntSearch();
     } catch (e) {
       print("❌ Error fetching device info: $e");
@@ -57,6 +70,9 @@ class DeviceDetailsScreenState extends State<DeviceDetailsScreen> {
           _deviceName = "Connection Failed";
           _batteryStatus = "Unknown";
           _deviceId = "Unknown";
+          _currentFirmwareVersion = "Unknown";
+          _latestFirmwareVersion = "Unknown";
+          _hasUpdateAvailable = false;
           _isFetchingData = false;
         });
       }
@@ -138,6 +154,65 @@ class DeviceDetailsScreenState extends State<DeviceDetailsScreen> {
     );
   }
 
+  /// Check for firmware updates
+  Future<void> _checkForUpdates() async {
+    if (_isCheckingFirmware) return;
+
+    setState(() {
+      _isCheckingFirmware = true;
+    });
+
+    try {
+      final firmwareInfo = await _antService.checkFirmwareUpdate(widget.device);
+      if (mounted) {
+        setState(() {
+          _latestFirmwareVersion = firmwareInfo["latestVersion"];
+          _hasUpdateAvailable = firmwareInfo["hasUpdate"];
+          _isCheckingFirmware = false;
+        });
+      }
+    } catch (e) {
+      print("❌ Error checking firmware update: $e");
+      if (mounted) {
+        setState(() {
+          _isCheckingFirmware = false;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("Failed to check for updates")),
+        );
+      }
+    }
+  }
+
+  /// Update firmware
+  Future<void> _updateFirmware() async {
+    if (_isCheckingFirmware) return;
+
+    setState(() {
+      _isCheckingFirmware = true;
+    });
+
+    try {
+      await _antService.updateFirmware(widget.device);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("Firmware update started")),
+        );
+        // Refresh device info after update
+        await _fetchDeviceInfo();
+      }
+    } catch (e) {
+      print("❌ Error updating firmware: $e");
+      if (mounted) {
+        setState(() {
+          _isCheckingFirmware = false;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("Failed to update firmware")),
+        );
+      }
+    }
+  }
 
   @override
   void dispose() {
@@ -176,20 +251,68 @@ class DeviceDetailsScreenState extends State<DeviceDetailsScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             _isFetchingData
-                ? Center(child: CircularProgressIndicator()) // ✅ Show loading indicator
+                ? Center(child: CircularProgressIndicator())
                 : Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text("🔋 Battery: $_batteryStatus", style: const TextStyle(fontSize: 18)),
                       Text("📶 Signal Strength: ${_antDevices.isNotEmpty ? _antDevices.first['rssi'] : 'N/A'} dBm", style: const TextStyle(fontSize: 18)),
                       Text("🔢 Current Device ID: $_deviceId", style: const TextStyle(fontSize: 18)),
+                      const SizedBox(height: 20),
+                      // Firmware Section
+                      Card(
+                        child: Padding(
+                          padding: const EdgeInsets.all(16.0),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text(
+                                "📱 Firmware",
+                                style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                              ),
+                              const SizedBox(height: 12),
+                              Text(
+                                "Current Version: $_currentFirmwareVersion",
+                                style: const TextStyle(fontSize: 16),
+                              ),
+                              if (_hasUpdateAvailable) ...[
+                                const SizedBox(height: 8),
+                                Text(
+                                  "Latest Version: $_latestFirmwareVersion",
+                                  style: const TextStyle(fontSize: 16),
+                                ),
+                              ],
+                              const SizedBox(height: 16),
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                                children: [
+                                  ElevatedButton(
+                                    onPressed: _isCheckingFirmware ? null : _checkForUpdates,
+                                    child: const Text("Check for Update"),
+                                  ),
+                                  if (_hasUpdateAvailable)
+                                    ElevatedButton(
+                                      onPressed: _isCheckingFirmware ? null : _updateFirmware,
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: Colors.green,
+                                        foregroundColor: Colors.white,
+                                      ),
+                                      child: const Text("Update Firmware"),
+                                    ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 20),
                     ],
                   ),
             const SizedBox(height: 20),
             const Text("🔍 Found ANT+ Devices:", style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
             Expanded(
               child: _antDevices.isEmpty
-                  ? Center(child: CircularProgressIndicator()) // ✅ Show loader while scanning
+                  ? Center(child: CircularProgressIndicator())
                   : ListView.builder(
                       itemCount: _antDevices.length,
                       itemBuilder: (context, index) {
