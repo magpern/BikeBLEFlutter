@@ -1,9 +1,11 @@
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import '../utils/ble_constants.dart';
 import 'github_service.dart';
+import 'dfu_service.dart';
 
 class AntService {
   final GitHubService _githubService = GitHubService();
+  final DfuService _dfuService = DfuService();
   bool _isConnected = false;
 
   /// Connect to BLE device
@@ -272,25 +274,41 @@ class AntService {
   }
 
   /// Update Firmware
-  Future<void> updateFirmware(BluetoothDevice device) async {
+  Future<void> updateFirmware(BluetoothDevice device, String filePath) async {
     try {
-      print("📡 Starting firmware update...");
-      await connectDevice(device);
-      final services = await device.discoverServices();
-      final service = services.firstWhere(
-        (s) => s.serviceUuid == BleConstants.customService,
-      );
+      print("📡 Starting firmware update process...");
       
-      final characteristic = service.characteristics.firstWhere(
-        (c) => c.characteristicUuid == BleConstants.firmwareUpdateChar,
-      );
+      // Get device MAC address if available (Android only)
+      String? macAddress;
+      try {
+        macAddress = device.remoteId.toString();
+      } catch (e) {
+        print("⚠️ Could not get MAC address: $e");
+      }
 
-      // Send update command (0x02)
-      await characteristic.write([0x02], withoutResponse: false);
-      print("✅ Firmware update command sent");
+      // Trigger DFU mode
+      await _dfuService.triggerDfuMode(device);
+
+      // Start DFU process
+      await _dfuService.startDfu(filePath, macAddress);
+      
+      print("✅ Firmware update process started");
     } catch (e) {
       print("❌ Failed to start firmware update: $e");
       rethrow;
     }
   }
+
+  /// Cancel Firmware Update
+  Future<void> cancelFirmwareUpdate() async {
+    try {
+      await _dfuService.cancelDfu();
+    } catch (e) {
+      print("❌ Failed to cancel firmware update: $e");
+      rethrow;
+    }
+  }
+
+  /// Get Firmware Update Progress Stream
+  Stream<dynamic> get firmwareUpdateProgress => _dfuService.progressStream;
 }

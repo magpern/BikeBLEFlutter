@@ -1,6 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import '../services/ant_service.dart';
+import 'package:http/http.dart' as http;
+import 'package:path_provider/path_provider.dart';
+import 'dart:io';
+import 'dart:async';
 
 class DeviceDetailsScreen extends StatefulWidget {
   final BluetoothDevice device;
@@ -20,8 +24,11 @@ class DeviceDetailsScreenState extends State<DeviceDetailsScreen> {
   String _latestFirmwareVersion = "Loading...";
   bool _hasUpdateAvailable = false;
   bool _isCheckingFirmware = false;
+  bool _isUpdatingFirmware = false;
+  String? _updateError;
   final List<Map<String, dynamic>> _antDevices = [];
-  bool _isFetchingData = true; // ✅ Track if data is still loading
+  bool _isFetchingData = true;
+  StreamSubscription? _firmwareUpdateProgressSubscription;
 
   @override
   void initState() {
@@ -186,29 +193,100 @@ class DeviceDetailsScreenState extends State<DeviceDetailsScreen> {
 
   /// Update firmware
   Future<void> _updateFirmware() async {
-    if (_isCheckingFirmware) return;
+    if (_isUpdatingFirmware) return;
 
     setState(() {
-      _isCheckingFirmware = true;
+      _isUpdatingFirmware = true;
+      _updateError = null;
     });
 
     try {
-      await _antService.updateFirmware(widget.device);
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("Firmware update started")),
-        );
-        // Refresh device info after update
-        await _fetchDeviceInfo();
+      // Get the firmware file path from the GitHub release
+      final updateInfo = await _antService.checkFirmwareUpdate(widget.device);
+      if (!updateInfo['hasUpdate'] || updateInfo['downloadUrl'] == null) {
+        throw Exception('No update available or download URL not found');
       }
+
+      // Download the firmware file
+      final response = await http.get(Uri.parse(updateInfo['downloadUrl']));
+      if (response.statusCode != 200) {
+        throw Exception('Failed to download firmware file');
+      }
+
+      // Save the file temporarily
+      final tempDir = await getTemporaryDirectory();
+      final filePath = '${tempDir.path}/firmware.zip';
+      await File(filePath).writeAsBytes(response.bodyBytes);
+
+      // Start firmware update
+      await _antService.updateFirmware(widget.device, filePath);
+
+      // Listen to update progress
+      _firmwareUpdateProgressSubscription?.cancel();
+      _firmwareUpdateProgressSubscription = _antService.firmwareUpdateProgress.listen(
+        (progress) {
+          if (mounted) {
+            setState(() {
+              // Update UI with progress information
+              // The exact progress type will depend on the nordic_dfu package
+            });
+          }
+        },
+        onError: (error) {
+          if (mounted) {
+            setState(() {
+              _updateError = error.toString();
+              _isUpdatingFirmware = false;
+            });
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text('Update failed: $error')),
+            );
+          }
+        },
+        onDone: () {
+          if (mounted) {
+            setState(() {
+              _isUpdatingFirmware = false;
+            });
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Firmware update completed')),
+            );
+            // Refresh device info
+            _fetchDeviceInfo();
+          }
+        },
+      );
     } catch (e) {
       print("❌ Error updating firmware: $e");
       if (mounted) {
         setState(() {
-          _isCheckingFirmware = false;
+          _updateError = e.toString();
+          _isUpdatingFirmware = false;
         });
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("Failed to update firmware")),
+          SnackBar(content: Text('Update failed: $e')),
+        );
+      }
+    }
+  }
+
+  /// Cancel firmware update
+  Future<void> _cancelFirmwareUpdate() async {
+    try {
+      await _antService.cancelFirmwareUpdate();
+      if (mounted) {
+        setState(() {
+          _isUpdatingFirmware = false;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Firmware update cancelled')),
+        );
+      }
+    } catch (e) {
+      print("❌ Error cancelling firmware update: $e");
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to cancel update: $e')),
         );
       }
     }
@@ -216,6 +294,7 @@ class DeviceDetailsScreenState extends State<DeviceDetailsScreen> {
 
   @override
   void dispose() {
+    _firmwareUpdateProgressSubscription?.cancel();
     print("🔌 Stopping ANT+ search before closing BLE connection...");
     
     // Stop ANT+ search and disconnect BLE in a fire-and-forget manner
@@ -239,7 +318,6 @@ class DeviceDetailsScreenState extends State<DeviceDetailsScreen> {
       print("❌ Failed to disconnect BLE: $e");
     }
   }
-
 
   @override
   Widget build(BuildContext context) {
@@ -282,22 +360,38 @@ class DeviceDetailsScreenState extends State<DeviceDetailsScreen> {
                                   style: const TextStyle(fontSize: 16),
                                 ),
                               ],
+                              if (_updateError != null) ...[
+                                const SizedBox(height: 8),
+                                Text(
+                                  "Error: $_updateError",
+                                  style: const TextStyle(fontSize: 16, color: Colors.red),
+                                ),
+                              ],
                               const SizedBox(height: 16),
                               Row(
                                 mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                                 children: [
                                   ElevatedButton(
-                                    onPressed: _isCheckingFirmware ? null : _checkForUpdates,
+                                    onPressed: (_isCheckingFirmware || _isUpdatingFirmware) ? null : _checkForUpdates,
                                     child: const Text("Check for Update"),
                                   ),
                                   if (_hasUpdateAvailable)
                                     ElevatedButton(
-                                      onPressed: _isCheckingFirmware ? null : _updateFirmware,
+                                      onPressed: (_isCheckingFirmware || _isUpdatingFirmware) ? null : _updateFirmware,
                                       style: ElevatedButton.styleFrom(
                                         backgroundColor: Colors.green,
                                         foregroundColor: Colors.white,
                                       ),
-                                      child: const Text("Update Firmware"),
+                                      child: Text(_isUpdatingFirmware ? "Updating..." : "Update Firmware"),
+                                    ),
+                                  if (_isUpdatingFirmware)
+                                    ElevatedButton(
+                                      onPressed: _cancelFirmwareUpdate,
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: Colors.red,
+                                        foregroundColor: Colors.white,
+                                      ),
+                                      child: const Text("Cancel Update"),
                                     ),
                                 ],
                               ),
