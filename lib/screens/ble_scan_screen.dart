@@ -168,9 +168,27 @@ class BleScanScreenState extends State<BleScanScreen> {
             ),
 
           // ✅ Scan Button
-          ElevatedButton(
-            onPressed: _isBluetoothEnabled == true ? _toggleScan : null,
-            child: Text(_isScanning ? "Stop Scanning" : "Find Your BikeBLE Device"),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16.0),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                ElevatedButton(
+                  onPressed: _isBluetoothEnabled == true ? _toggleScan : null,
+                  child: Text(_isScanning ? "Stop Scanning" : "Find Your BikeBLE Device"),
+                ),
+                if (_isScanning) ...[
+                  const SizedBox(width: 8),
+                  const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                    ),
+                  ),
+                ],
+              ],
+            ),
           ),
 
           // ✅ Section Header for Found Devices
@@ -186,12 +204,7 @@ class BleScanScreenState extends State<BleScanScreen> {
           // ✅ BLE Device List (With "Select" Button, ANT+ Icon & RSSI)
           Expanded(
             child: _devices.isEmpty
-                ? _isScanning
-                    ? const Padding(
-                        padding: EdgeInsets.only(top: 10), // ✅ Subtle Spinner Positioning
-                        child: CircularProgressIndicator(),
-                      )
-                    : const SizedBox() // ✅ No spinner when scanning is off
+                ? const SizedBox() // No spinner when no devices
                 : ListView.builder(
                     itemCount: _devices.length,
                     itemBuilder: (context, index) {
