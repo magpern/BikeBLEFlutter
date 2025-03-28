@@ -276,25 +276,13 @@ class AntService {
   /// Update Firmware
   Future<void> updateFirmware(BluetoothDevice device, String filePath) async {
     try {
-      print("📡 Starting firmware update process...");
+      print("📡 Starting full firmware update process (trigger + scan + update)...");
       
-      // Get device MAC address if available (Android only)
-      String? macAddress;
-      try {
-        macAddress = device.remoteId.toString();
-      } catch (e) {
-        print("⚠️ Could not get MAC address: $e");
-      }
+      await _dfuService.performFullDfu(device, filePath);
 
-      // Trigger DFU mode
-      await _dfuService.triggerDfuMode(device);
-
-      // Start DFU process
-      await _dfuService.startDfu(filePath, macAddress);
-      
-      print("✅ Firmware update process started");
+      print("✅ Firmware update process started via DFU Bootloader");
     } catch (e) {
-      print("❌ Failed to start firmware update: $e");
+      print("❌ Failed to start full firmware update: $e");
       rethrow;
     }
   }
@@ -302,7 +290,7 @@ class AntService {
   /// Cancel Firmware Update
   Future<void> cancelFirmwareUpdate() async {
     try {
-      await _dfuService.cancelDfu();
+      await _dfuService.abortDfu();
     } catch (e) {
       print("❌ Failed to cancel firmware update: $e");
       rethrow;

@@ -195,7 +195,6 @@ class DeviceDetailsScreenState extends State<DeviceDetailsScreen> {
     );
   }
 
-  /// Update firmware
   Future<void> _updateFirmware(Map<String, dynamic> updateInfo) async {
     if (_isUpdatingFirmware) return;
 
@@ -205,20 +204,27 @@ class DeviceDetailsScreenState extends State<DeviceDetailsScreen> {
     });
 
     try {
-      if (updateInfo['downloadUrl'] == null) {
+      final url = updateInfo['downloadUrl'];
+      if (url == null) {
         throw Exception('Download URL not found');
       }
 
+      print('🌐 Downloading firmware from: $url');
+
       // Download the firmware file
-      final response = await http.get(Uri.parse(updateInfo['downloadUrl']));
+      final response = await http.get(Uri.parse(url));
       if (response.statusCode != 200) {
-        throw Exception('Failed to download firmware file');
+        throw Exception('Failed to download firmware file (status: ${response.statusCode})');
       }
 
       // Save the file temporarily
       final tempDir = await getTemporaryDirectory();
       final filePath = '${tempDir.path}/firmware.zip';
-      await File(filePath).writeAsBytes(response.bodyBytes);
+      final file = await File(filePath).writeAsBytes(response.bodyBytes);
+
+      final fileSize = await file.length();
+      print('📁 Firmware saved to: $filePath');
+      print('📦 Firmware size: $fileSize bytes (${(fileSize / 1024).toStringAsFixed(2)} KB)');
 
       // Start firmware update
       await _antService.updateFirmware(widget.device, filePath);
@@ -228,8 +234,7 @@ class DeviceDetailsScreenState extends State<DeviceDetailsScreen> {
       _firmwareUpdateProgressSubscription = _antService.firmwareUpdateProgress.listen(
         (progress) {
           if (mounted) {
-            // Update UI with progress information
-            print('Update progress: ${progress.progress * 100}%');
+            print('📶 Update progress: ${(progress.progress * 100).toStringAsFixed(1)}%');
           }
         },
         onError: (error) {
@@ -251,7 +256,6 @@ class DeviceDetailsScreenState extends State<DeviceDetailsScreen> {
             ScaffoldMessenger.of(context).showSnackBar(
               const SnackBar(content: Text('Firmware update completed')),
             );
-            // Refresh device info
             _fetchDeviceInfo();
           }
         },
