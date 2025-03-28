@@ -1,3 +1,4 @@
 {
-    "cmake.sourceDirectory": "D:/nRF5_SDK/projects/satsbike_scanner/linux/flutter"
+    "cmake.sourceDirectory": "D:/nRF5_SDK/projects/satsbike_scanner/linux/flutter",
+    "java.configuration.updateBuildConfiguration": "automatic"
 }

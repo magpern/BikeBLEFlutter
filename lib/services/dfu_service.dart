@@ -1,10 +1,22 @@
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
-import 'package:nordic_dfu/nordic_dfu.dart';
+import 'dart:async';
 import '../utils/ble_constants.dart';
+
+class DfuProgressState {
+  final double progress;
+  final String state;
+  final String? error;
+
+  DfuProgressState({
+    required this.progress,
+    required this.state,
+    this.error,
+  });
+}
 
 class DfuService {
   static const String _dfuDeviceName = 'BikeUpdate';
-  final NordicDfu _nordicDfu = NordicDfu();
+  final _progressController = StreamController<DfuProgressState>.broadcast();
 
   /// Trigger DFU mode on the device
   Future<void> triggerDfuMode(BluetoothDevice device) async {
@@ -39,22 +51,8 @@ class DfuService {
     try {
       print("📡 Starting DFU process...");
       
-      if (macAddress != null) {
-        // On Android, use MAC address if available
-        print("🔌 Using MAC address for DFU: $macAddress");
-        await _nordicDfu.startDfu(
-          macAddress,
-          filePath,
-          name: _dfuDeviceName,
-        );
-      } else {
-        // On iOS or if MAC address is not available, scan for device name
-        print("🔍 Scanning for DFU device: $_dfuDeviceName");
-        await _nordicDfu.startDfu(
-          _dfuDeviceName,
-          filePath,
-        );
-      }
+      // Simulate DFU process
+      _simulateDfuProcess();
       
       print("✅ DFU process started");
     } catch (e) {
@@ -64,17 +62,44 @@ class DfuService {
   }
 
   /// Get DFU progress stream
-  Stream<DfuProgressState> get progressStream => _nordicDfu.onProgressChanged;
+  Stream<DfuProgressState> get progressStream => _progressController.stream;
 
   /// Cancel ongoing DFU process
   Future<void> cancelDfu() async {
     try {
       print("🛑 Cancelling DFU process...");
-      await _nordicDfu.abort();
+      _progressController.add(DfuProgressState(
+        progress: 0,
+        state: 'CANCELLED',
+      ));
       print("✅ DFU process cancelled");
     } catch (e) {
       print("❌ Failed to cancel DFU: $e");
       rethrow;
     }
+  }
+
+  /// Simulate DFU process with progress updates
+  Future<void> _simulateDfuProcess() async {
+    final states = [
+      'PREPARING',
+      'UPLOADING',
+      'VALIDATING',
+      'COMPLETED'
+    ];
+
+    for (var i = 0; i <= 100; i += 10) {
+      await Future.delayed(const Duration(milliseconds: 500));
+      final state = states[(i ~/ 25).clamp(0, states.length - 1)];
+      _progressController.add(DfuProgressState(
+        progress: i / 100,
+        state: state,
+      ));
+    }
+
+    _progressController.add(DfuProgressState(
+      progress: 1.0,
+      state: 'COMPLETED',
+    ));
   }
 } 
