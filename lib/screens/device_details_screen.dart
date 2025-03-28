@@ -21,13 +21,10 @@ class DeviceDetailsScreenState extends State<DeviceDetailsScreen> {
   String _batteryStatus = "Loading...";
   String _deviceId = "Loading...";
   String _currentFirmwareVersion = "Loading...";
-  String _latestFirmwareVersion = "Loading...";
-  bool _hasUpdateAvailable = false;
-  bool _isCheckingFirmware = false;
+  bool _isFetchingData = true;
   bool _isUpdatingFirmware = false;
   String? _updateError;
   final List<Map<String, dynamic>> _antDevices = [];
-  bool _isFetchingData = true;
   StreamSubscription? _firmwareUpdateProgressSubscription;
 
   @override
@@ -53,8 +50,6 @@ class DeviceDetailsScreenState extends State<DeviceDetailsScreen> {
       // ✅ 4. Read Firmware Version
       final firmwareInfo = await _antService.getFirmwareVersion(widget.device);
       final currentVersion = firmwareInfo["currentVersion"];
-      final latestVersion = firmwareInfo["latestVersion"];
-      final hasUpdate = firmwareInfo["hasUpdate"];
 
       if (mounted) {
         setState(() {
@@ -62,14 +57,15 @@ class DeviceDetailsScreenState extends State<DeviceDetailsScreen> {
           _batteryStatus = batteryStatus;
           _deviceId = deviceId;
           _currentFirmwareVersion = currentVersion;
-          _latestFirmwareVersion = latestVersion;
-          _hasUpdateAvailable = hasUpdate;
           _isFetchingData = false;
         });
       }
 
       // ✅ 5. Start ANT+ Device Search After Everything is Done
       _startAntSearch();
+
+      // ✅ 6. Check for firmware updates in background
+      _checkForUpdates();
     } catch (e) {
       print("❌ Error fetching device info: $e");
       if (mounted) {
@@ -78,8 +74,6 @@ class DeviceDetailsScreenState extends State<DeviceDetailsScreen> {
           _batteryStatus = "Unknown";
           _deviceId = "Unknown";
           _currentFirmwareVersion = "Unknown";
-          _latestFirmwareVersion = "Unknown";
-          _hasUpdateAvailable = false;
           _isFetchingData = false;
         });
       }
@@ -161,38 +155,48 @@ class DeviceDetailsScreenState extends State<DeviceDetailsScreen> {
     );
   }
 
-  /// Check for firmware updates
+  /// Check for firmware updates in background
   Future<void> _checkForUpdates() async {
-    if (_isCheckingFirmware) return;
-
-    setState(() {
-      _isCheckingFirmware = true;
-    });
-
     try {
       final firmwareInfo = await _antService.checkFirmwareUpdate(widget.device);
-      if (mounted) {
-        setState(() {
-          _latestFirmwareVersion = firmwareInfo["latestVersion"];
-          _hasUpdateAvailable = firmwareInfo["hasUpdate"];
-          _isCheckingFirmware = false;
-        });
+      if (mounted && firmwareInfo["hasUpdate"]) {
+        _showUpdateDialog(firmwareInfo);
       }
     } catch (e) {
       print("❌ Error checking firmware update: $e");
-      if (mounted) {
-        setState(() {
-          _isCheckingFirmware = false;
-        });
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("Failed to check for updates")),
-        );
-      }
     }
   }
 
+  /// Show update dialog
+  void _showUpdateDialog(Map<String, dynamic> firmwareInfo) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('New Firmware Available'),
+        content: Text(
+          'A new firmware version ${firmwareInfo["latestVersion"]} is available.\n'
+          'Current version: $_currentFirmwareVersion\n\n'
+          'Would you like to update now?'
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Not Now'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.pop(context);
+              _updateFirmware(firmwareInfo);
+            },
+            child: const Text('Update Now'),
+          ),
+        ],
+      ),
+    );
+  }
+
   /// Update firmware
-  Future<void> _updateFirmware() async {
+  Future<void> _updateFirmware(Map<String, dynamic> updateInfo) async {
     if (_isUpdatingFirmware) return;
 
     setState(() {
@@ -201,10 +205,8 @@ class DeviceDetailsScreenState extends State<DeviceDetailsScreen> {
     });
 
     try {
-      // Get the firmware file path from the GitHub release
-      final updateInfo = await _antService.checkFirmwareUpdate(widget.device);
-      if (!updateInfo['hasUpdate'] || updateInfo['downloadUrl'] == null) {
-        throw Exception('No update available or download URL not found');
+      if (updateInfo['downloadUrl'] == null) {
+        throw Exception('Download URL not found');
       }
 
       // Download the firmware file
@@ -226,10 +228,8 @@ class DeviceDetailsScreenState extends State<DeviceDetailsScreen> {
       _firmwareUpdateProgressSubscription = _antService.firmwareUpdateProgress.listen(
         (progress) {
           if (mounted) {
-            setState(() {
-              // Update UI with progress information
-              // The exact progress type will depend on the nordic_dfu package
-            });
+            // Update UI with progress information
+            print('Update progress: ${progress.progress * 100}%');
           }
         },
         onError: (error) {
@@ -329,76 +329,27 @@ class DeviceDetailsScreenState extends State<DeviceDetailsScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             _isFetchingData
-                ? Center(child: CircularProgressIndicator())
+                ? const Center(child: CircularProgressIndicator())
                 : Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text("🔋 Battery: $_batteryStatus", style: const TextStyle(fontSize: 18)),
                       Text("📶 Signal Strength: ${_antDevices.isNotEmpty ? _antDevices.first['rssi'] : 'N/A'} dBm", style: const TextStyle(fontSize: 18)),
                       Text("🔢 Current Device ID: $_deviceId", style: const TextStyle(fontSize: 18)),
-                      const SizedBox(height: 20),
-                      // Firmware Section
-                      Card(
-                        child: Padding(
-                          padding: const EdgeInsets.all(16.0),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              const Text(
-                                "📱 Firmware",
-                                style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-                              ),
-                              const SizedBox(height: 12),
-                              Text(
-                                "Current Version: $_currentFirmwareVersion",
-                                style: const TextStyle(fontSize: 16),
-                              ),
-                              if (_hasUpdateAvailable) ...[
-                                const SizedBox(height: 8),
-                                Text(
-                                  "Latest Version: $_latestFirmwareVersion",
-                                  style: const TextStyle(fontSize: 16),
-                                ),
-                              ],
-                              if (_updateError != null) ...[
-                                const SizedBox(height: 8),
-                                Text(
-                                  "Error: $_updateError",
-                                  style: const TextStyle(fontSize: 16, color: Colors.red),
-                                ),
-                              ],
-                              const SizedBox(height: 16),
-                              Row(
-                                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                                children: [
-                                  ElevatedButton(
-                                    onPressed: (_isCheckingFirmware || _isUpdatingFirmware) ? null : _checkForUpdates,
-                                    child: const Text("Check for Update"),
-                                  ),
-                                  if (_hasUpdateAvailable)
-                                    ElevatedButton(
-                                      onPressed: (_isCheckingFirmware || _isUpdatingFirmware) ? null : _updateFirmware,
-                                      style: ElevatedButton.styleFrom(
-                                        backgroundColor: Colors.green,
-                                        foregroundColor: Colors.white,
-                                      ),
-                                      child: Text(_isUpdatingFirmware ? "Updating..." : "Update Firmware"),
-                                    ),
-                                  if (_isUpdatingFirmware)
-                                    ElevatedButton(
-                                      onPressed: _cancelFirmwareUpdate,
-                                      style: ElevatedButton.styleFrom(
-                                        backgroundColor: Colors.red,
-                                        foregroundColor: Colors.white,
-                                      ),
-                                      child: const Text("Cancel Update"),
-                                    ),
-                                ],
-                              ),
-                            ],
+                      Text("📱 Firmware Version: $_currentFirmwareVersion", style: const TextStyle(fontSize: 18)),
+                      if (_isUpdatingFirmware) ...[
+                        const SizedBox(height: 8),
+                        LinearProgressIndicator(),
+                        const SizedBox(height: 8),
+                        ElevatedButton(
+                          onPressed: _cancelFirmwareUpdate,
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.red,
+                            foregroundColor: Colors.white,
                           ),
+                          child: const Text("Cancel Update"),
                         ),
-                      ),
+                      ],
                       const SizedBox(height: 20),
                     ],
                   ),

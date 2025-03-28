@@ -17,32 +17,63 @@ class DfuProgressState {
 class DfuService {
   static const String _dfuDeviceName = 'BikeUpdate';
   final _progressController = StreamController<DfuProgressState>.broadcast();
+  static const int _maxRetries = 3;
+  static const Duration _retryDelay = Duration(seconds: 1);
 
   /// Trigger DFU mode on the device
   Future<void> triggerDfuMode(BluetoothDevice device) async {
-    try {
-      print("📡 Triggering DFU mode...");
-      
-      // Get the custom service and characteristic
-      final services = await device.discoverServices();
-      final service = services.firstWhere(
-        (s) => s.serviceUuid == BleConstants.customService,
-      );
-      
-      final characteristic = service.characteristics.firstWhere(
-        (c) => c.characteristicUuid == BleConstants.scanControlChar,
-      );
+    int retryCount = 0;
+    while (retryCount < _maxRetries) {
+      try {
+        print("📡 Triggering DFU mode... (Attempt ${retryCount + 1}/$_maxRetries)");
+        
+        // Ensure device is connected
+        if (!device.isConnected) {
+          print("🔌 Device not connected, attempting to connect...");
+          await device.connect(timeout: const Duration(seconds: 5));
+          await Future.delayed(const Duration(milliseconds: 500)); // Give it time to stabilize
+        }
 
-      // Send DFU trigger command (0x05)
-      await characteristic.write([0x05], withoutResponse: false);
-      print("✅ DFU trigger command sent");
+        // Get the custom service and characteristic
+        final services = await device.discoverServices();
+        final service = services.firstWhere(
+          (s) => s.serviceUuid == BleConstants.customService,
+          orElse: () => throw Exception('Custom service not found'),
+        );
+        
+        final characteristic = service.characteristics.firstWhere(
+          (c) => c.characteristicUuid == BleConstants.scanControlChar,
+          orElse: () => throw Exception('Scan control characteristic not found'),
+        );
 
-      // Disconnect from the device
-      await device.disconnect();
-      print("✅ Disconnected from device");
-    } catch (e) {
-      print("❌ Failed to trigger DFU mode: $e");
-      rethrow;
+        // Check if characteristic is writable
+        if (!characteristic.properties.write) {
+          throw Exception('Characteristic is not writable');
+        }
+
+        // Send DFU trigger command (0x05)
+        await characteristic.write([0x05], withoutResponse: false);
+        print("✅ DFU trigger command sent");
+
+        // Wait a bit before disconnecting
+        await Future.delayed(const Duration(milliseconds: 500));
+
+        // Disconnect from the device
+        await device.disconnect();
+        print("✅ Disconnected from device");
+        return; // Success, exit the retry loop
+      } catch (e) {
+        retryCount++;
+        print("❌ Attempt $retryCount failed: $e");
+        
+        if (retryCount < _maxRetries) {
+          print("⏳ Waiting before retry...");
+          await Future.delayed(_retryDelay);
+        } else {
+          print("❌ All retry attempts failed");
+          rethrow;
+        }
+      }
     }
   }
 
