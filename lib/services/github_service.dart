@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
+import '../utils/logger.dart';
 
 class GitHubService {
   static const String _baseUrl = 'https://api.github.com';
@@ -52,7 +53,7 @@ class GitHubService {
       
       return false;
     } catch (e) {
-      print('⚠️ Version comparison error: $e');
+      log.e('Version comparison error: $e');
       return false;
     }
   }
@@ -91,7 +92,7 @@ class GitHubService {
         'error': 'Failed to fetch release information',
       };
     } catch (e) {
-      print('❌ Error fetching GitHub release: $e');
+      log.e('Error fetching GitHub release: $e');
       return {
         'version': 'Unknown',
         'downloadUrl': null,

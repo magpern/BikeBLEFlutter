@@ -1,8 +1,10 @@
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import '../utils/ble_constants.dart';
+import 'package:logger/logger.dart';
 
 class BleService {
   final List<BluetoothDevice> _foundDevices = [];
+  final Logger log = Logger();
 
   /// Scan for BLE devices advertising FTMS and Custom Service
   Stream<List<BluetoothDevice>> scanForDevices() {
@@ -17,13 +19,13 @@ class BleService {
     return FlutterBluePlus.scanResults.map((results) {
       bool listChanged = false;
       for (ScanResult r in results) {
-        print("Found device: ${r.device.platformName} (${r.device.remoteId})");
-        print("Services: ${r.advertisementData.serviceUuids}");
+        log.i("Found device: ${r.device.platformName} (${r.device.remoteId})");
+        log.i("Services: ${r.advertisementData.serviceUuids}");
         
         // Check if device advertises our required services
         if (r.advertisementData.serviceUuids.contains(BleConstants.ftmsService) ||
             r.advertisementData.serviceUuids.contains(BleConstants.customService)) {
-          print("Found matching device: ${r.device.platformName}");
+          log.i("Found matching device: ${r.device.platformName}");
           if (!_foundDevices.any((d) => d.remoteId == r.device.remoteId)) {
             _foundDevices.add(r.device);
             listChanged = true;

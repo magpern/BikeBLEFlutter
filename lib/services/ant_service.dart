@@ -2,27 +2,29 @@ import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import '../utils/ble_constants.dart';
 import 'github_service.dart';
 import 'dfu_service.dart';
+import 'package:logger/logger.dart';
 
 class AntService {
   final GitHubService _githubService = GitHubService();
   final DfuService _dfuService = DfuService();
   bool _isConnected = false;
+  final Logger log = Logger();
 
   /// Connect to BLE device
   Future<void> connectDevice(BluetoothDevice device) async {
     if (_isConnected) {
-      print("✅ Already connected to BLE device");
+      log.i("Already connected to BLE device");
       return;
     }
 
     try {
-      print("🔌 Connecting to BLE device...");
+      log.i("Connecting to BLE device...");
       await device.connect(timeout: const Duration(seconds: 10));
       await Future.delayed(const Duration(milliseconds: 1000)); // Give it time to stabilize
       _isConnected = true;
-      print("✅ Connected to BLE device");
+      log.i("Connected to BLE device");
     } catch (e) {
-      print("❌ Failed to connect to BLE device: $e");
+      log.e("Failed to connect to BLE device: $e");
       _isConnected = false;
       rethrow;
     }
@@ -31,7 +33,7 @@ class AntService {
   /// Get Battery Level (Read-Only)
   Future<String> getBatteryLevel(BluetoothDevice device) async {
     try {
-      print("🔋 Requesting battery level...");
+      log.i("Requesting battery level...");
       await connectDevice(device);
       final service = await device.discoverServices();
       final batteryService = service.firstWhere(
@@ -46,14 +48,14 @@ class AntService {
 
       final response = await characteristic.read();
       if (response.isNotEmpty) {
-        print("✅ Battery Level Response: ${response[0]}%");
+        log.i("Battery Level Response: ${response[0]}%");
         return "${response[0]}%";
       } else {
-        print("⚠️ Battery read was empty!");
+        log.w("Battery read was empty!");
         return "Unknown%";
       }
     } catch (e) {
-      print("❌ Failed to read battery level: $e");
+      log.e("Failed to read battery level: $e");
       return "Unknown%";
     }
   }
@@ -61,7 +63,7 @@ class AntService {
   /// Get Device ID & Name from `0x1524` (Read-Only)
   Future<Map<String, dynamic>> getDeviceInfo(BluetoothDevice device) async {
     try {
-      print("📡 Requesting Device ID & Name...");
+      log.i("Requesting Device ID & Name...");
       await connectDevice(device);
       final services = await device.discoverServices();
       final service = services.firstWhere(
@@ -74,7 +76,7 @@ class AntService {
 
       final response = await characteristic.read();
       if (response.length < 3) {
-        print("⚠️ Invalid response length: ${response.length}");
+        log.w("Invalid response length: ${response.length}");
         return {"deviceId": "Unknown", "deviceName": "Unknown Device"};
       }
 
@@ -84,10 +86,10 @@ class AntService {
           ? String.fromCharCodes(response.sublist(3, 3 + nameLength))
           : "Unknown Device";
 
-      print("✅ Device Info - ID: $deviceIdValue, Name: $deviceName");
+      log.i("Device Info - ID: $deviceIdValue, Name: $deviceName");
       return {"deviceId": deviceIdValue.toString(), "deviceName": deviceName};
     } catch (e) {
-      print("❌ Failed to read Device ID & Name: $e");
+      log.e("Failed to read Device ID & Name: $e");
       return {"deviceId": "Unknown", "deviceName": "Unknown Device"};
     }
   }
@@ -109,10 +111,10 @@ class AntService {
         (c) => c.characteristicUuid == BleConstants.scanResultsChar,
       );
 
-      print("📡 Subscribing to ANT+ scan results (0x1602) before starting scan...");
+      log.i("Subscribing to ANT+ scan results (0x1602) before starting scan...");
       await resultsChar.setNotifyValue(true);
 
-      print("📡 Sending `0x01` to `0x1601` to start scanning...");
+      log.i("Sending `0x01` to `0x1601` to start scanning...");
       await controlChar.write([0x01], withoutResponse: false);
 
       await for (final data in resultsChar.lastValueStream) {
@@ -121,21 +123,21 @@ class AntService {
         final deviceId = data[0] | (data[1] << 8);
         final rssi = data[2];
 
-        print("✅ ANT+ Device Found: ID=$deviceId, RSSI=$rssi dBm");
+        log.i("ANT+ Device Found: ID=$deviceId, RSSI=$rssi dBm");
         yield {
           "deviceId": deviceId,
           "rssi": rssi,
         };
       }
     } catch (e) {
-      print("❌ Error in ANT+ search: $e");
+      log.e("Error in ANT+ search: $e");
     }
   }
 
   /// Stop ANT+ Scanning
   Future<void> stopAntSearch(BluetoothDevice device) async {
     try {
-      print("🛑 Sending `0x02` to `0x1601` to stop ANT+ scanning...");
+      log.i("Sending `0x02` to `0x1601` to stop ANT+ scanning...");
       final services = await device.discoverServices();
       final customService = services.firstWhere(
         (s) => s.serviceUuid == BleConstants.customService,
@@ -146,9 +148,9 @@ class AntService {
       );
 
       await controlChar.write([0x02], withoutResponse: false);
-      print("✅ ANT+ Scanning Stopped.");
+      log.i("ANT+ Scanning Stopped.");
     } catch (e) {
-      print("❌ Failed to stop ANT+ scanning: $e");
+      log.e("Failed to stop ANT+ scanning: $e");
       rethrow;
     }
   }
@@ -156,12 +158,12 @@ class AntService {
   /// Disconnect BLE device
   Future<void> disconnectDevice(BluetoothDevice device) async {
     try {
-      print("🔌 Disconnecting BLE device...");
+      log.i("Disconnecting BLE device...");
       await device.disconnect();
       _isConnected = false;
-      print("✅ BLE Disconnected Successfully.");
+      log.i("BLE Disconnected Successfully.");
     } catch (e) {
-      print("❌ Error disconnecting BLE: $e");
+      log.e("Error disconnecting BLE: $e");
       rethrow;
     }
   }
@@ -179,11 +181,11 @@ class AntService {
       );
 
       List<int> value = [antDeviceId & 0xFF, (antDeviceId >> 8) & 0xFF];
-      print("💾 Writing ANT+ Device ID to 0x1603: $antDeviceId...");
+      log.i("Writing ANT+ Device ID to 0x1603: $antDeviceId...");
       await characteristic.write(value, withoutResponse: false);
-      print("✅ Successfully wrote to 0x1603!");
+      log.i("Successfully wrote to 0x1603!");
     } catch (e) {
-      print("❌ Error writing to 0x1603: $e");
+      log.e("Error writing to 0x1603: $e");
       rethrow;
     }
   }
@@ -191,7 +193,7 @@ class AntService {
   /// Get Firmware Version Information
   Future<Map<String, dynamic>> getFirmwareVersion(BluetoothDevice device) async {
     try {
-      print("📡 Requesting firmware version...");
+      log.i("Requesting firmware version...");
       await connectDevice(device);
       final services = await device.discoverServices();
       
@@ -209,7 +211,7 @@ class AntService {
 
       final response = await characteristic.read();
       if (response.isEmpty) {
-        print("⚠️ Empty firmware revision response");
+        log.w("Empty firmware revision response");
         return {
           "currentVersion": "Unknown",
           "latestVersion": "Unknown",
@@ -219,7 +221,7 @@ class AntService {
 
       // Parse firmware version as UTF-8 string
       String currentVersion = String.fromCharCodes(response);
-      print("✅ Firmware Version: $currentVersion");
+      log.i("Firmware Version: $currentVersion");
 
       return {
         "currentVersion": currentVersion,
@@ -227,7 +229,7 @@ class AntService {
         "hasUpdate": false // Will be updated when checking for updates
       };
     } catch (e) {
-      print("❌ Failed to read firmware version: $e");
+      log.e("Failed to read firmware version: $e");
       return {
         "currentVersion": "Unknown",
         "latestVersion": "Unknown",
@@ -239,7 +241,7 @@ class AntService {
   /// Check for Firmware Updates
   Future<Map<String, dynamic>> checkFirmwareUpdate(BluetoothDevice device) async {
     try {
-      print("📡 Checking for firmware updates...");
+      log.i("Checking for firmware updates...");
       
       // Get current firmware version from device
       final currentVersion = (await getFirmwareVersion(device))["currentVersion"];
@@ -248,7 +250,7 @@ class AntService {
       final githubRelease = await _githubService.getLatestRelease();
       
       if (!githubRelease['success']) {
-        print("❌ Failed to fetch GitHub release: ${githubRelease['error']}");
+        log.e("Failed to fetch GitHub release: ${githubRelease['error']}");
         return {
           "latestVersion": "Unable to check for updates",
           "hasUpdate": false
@@ -258,14 +260,14 @@ class AntService {
       final latestVersion = githubRelease['version'];
       final hasUpdate = _githubService.isNewerVersion(currentVersion, latestVersion);
 
-      print("✅ Firmware Update Check - Current: $currentVersion, Latest: $latestVersion, Update Available: $hasUpdate");
+      log.i("Firmware Update Check - Current: $currentVersion, Latest: $latestVersion, Update Available: $hasUpdate");
       return {
         "latestVersion": latestVersion,
         "hasUpdate": hasUpdate,
         "downloadUrl": githubRelease['downloadUrl']
       };
     } catch (e) {
-      print("❌ Failed to check firmware update: $e");
+      log.e("Failed to check firmware update: $e");
       return {
         "latestVersion": "Unable to check for updates",
         "hasUpdate": false
@@ -276,13 +278,13 @@ class AntService {
   /// Update Firmware
   Future<void> updateFirmware(BluetoothDevice device, String filePath) async {
     try {
-      print("📡 Starting full firmware update process (trigger + scan + update)...");
+      log.i("Starting full firmware update process (trigger + scan + update)...");
       
       await _dfuService.performFullDfu(device, filePath);
 
-      print("✅ Firmware update process started via DFU Bootloader");
+      log.i("Firmware update process started via DFU Bootloader");
     } catch (e) {
-      print("❌ Failed to start full firmware update: $e");
+      log.e("Failed to start full firmware update: $e");
       rethrow;
     }
   }
@@ -292,7 +294,7 @@ class AntService {
     try {
       await _dfuService.abortDfu();
     } catch (e) {
-      print("❌ Failed to cancel firmware update: $e");
+      log.e("Failed to cancel firmware update: $e");
       rethrow;
     }
   }

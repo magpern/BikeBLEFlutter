@@ -5,18 +5,25 @@ import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 import 'dart:io';
 import 'dart:async';
+import 'package:logger/logger.dart';
 
 class DeviceDetailsScreen extends StatefulWidget {
   final BluetoothDevice device;
+  final String? antDeviceId;
 
-  const DeviceDetailsScreen({super.key, required this.device});
+  const DeviceDetailsScreen({
+    super.key,
+    required this.device,
+    this.antDeviceId,
+  });
 
   @override
-  DeviceDetailsScreenState createState() => DeviceDetailsScreenState();
+  State<DeviceDetailsScreen> createState() => _DeviceDetailsScreenState();
 }
 
-class DeviceDetailsScreenState extends State<DeviceDetailsScreen> {
+class _DeviceDetailsScreenState extends State<DeviceDetailsScreen> {
   final AntService _antService = AntService();
+  final Logger log = Logger();
   String _deviceName = "Loading...";
   String _batteryStatus = "Loading...";
   String _deviceId = "Loading...";
@@ -67,7 +74,7 @@ class DeviceDetailsScreenState extends State<DeviceDetailsScreen> {
       // ✅ 6. Check for firmware updates in background
       _checkForUpdates();
     } catch (e) {
-      print("❌ Error fetching device info: $e");
+      log.e("Error fetching device info: $e");
       if (mounted) {
         setState(() {
           _deviceName = "Connection Failed";
@@ -117,12 +124,12 @@ class DeviceDetailsScreenState extends State<DeviceDetailsScreen> {
                 navigatorState.pop(); // Close dialog first
 
                 try {
-                  print("🛑 Stopping ANT+ scan...");
+                  log.i("Stopping ANT+ scan...");
                   await _antService.stopAntSearch(widget.device);
 
-                  print("💾 Saving ANT+ Device ID: $antDeviceId...");
+                  log.i("Saving ANT+ Device ID: $antDeviceId...");
                   await _antService.saveSelectedAntDevice(widget.device, antDeviceId);
-                  print("✅ ANT+ Device ID saved successfully!");
+                  log.i("ANT+ Device ID saved successfully!");
 
                   // Navigate back to previous screen after successful save
                   if (mounted) {
@@ -136,7 +143,7 @@ class DeviceDetailsScreenState extends State<DeviceDetailsScreen> {
                     navigatorState.pop(); // Return to previous screen
                   }
                 } catch (e) {
-                  print("❌ Failed to save ANT+ Device: $e");
+                  log.e("Failed to save ANT+ Device: $e");
                   if (mounted) {
                     ScaffoldMessenger.of(context).showSnackBar(
                       const SnackBar(
@@ -163,7 +170,7 @@ class DeviceDetailsScreenState extends State<DeviceDetailsScreen> {
         _showUpdateDialog(firmwareInfo);
       }
     } catch (e) {
-      print("❌ Error checking firmware update: $e");
+      log.e("Error checking firmware update: $e");
     }
   }
 
@@ -209,7 +216,7 @@ class DeviceDetailsScreenState extends State<DeviceDetailsScreen> {
         throw Exception('Download URL not found');
       }
 
-      print('🌐 Downloading firmware from: $url');
+      log.i('Downloading firmware from: $url');
 
       // Download the firmware file
       final response = await http.get(Uri.parse(url));
@@ -223,8 +230,8 @@ class DeviceDetailsScreenState extends State<DeviceDetailsScreen> {
       final file = await File(filePath).writeAsBytes(response.bodyBytes);
 
       final fileSize = await file.length();
-      print('📁 Firmware saved to: $filePath');
-      print('📦 Firmware size: $fileSize bytes (${(fileSize / 1024).toStringAsFixed(2)} KB)');
+      log.i('Firmware saved to: $filePath');
+      log.i('Firmware size: $fileSize bytes (${(fileSize / 1024).toStringAsFixed(2)} KB)');
 
       // Start firmware update
       await _antService.updateFirmware(widget.device, filePath);
@@ -234,7 +241,7 @@ class DeviceDetailsScreenState extends State<DeviceDetailsScreen> {
       _firmwareUpdateProgressSubscription = _antService.firmwareUpdateProgress.listen(
         (progress) {
           if (mounted) {
-            print('📶 Update progress: ${(progress.progress * 100).toStringAsFixed(1)}%');
+            log.i('Update progress: ${(progress.progress * 100).toStringAsFixed(1)}%');
           }
         },
         onError: (error) {
@@ -261,7 +268,7 @@ class DeviceDetailsScreenState extends State<DeviceDetailsScreen> {
         },
       );
     } catch (e) {
-      print("❌ Error updating firmware: $e");
+      log.e("Error updating firmware: $e");
       if (mounted) {
         setState(() {
           _updateError = e.toString();
@@ -287,7 +294,7 @@ class DeviceDetailsScreenState extends State<DeviceDetailsScreen> {
         );
       }
     } catch (e) {
-      print("❌ Error cancelling firmware update: $e");
+      log.e("Error cancelling firmware update: $e");
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Failed to cancel update: $e')),
@@ -299,7 +306,7 @@ class DeviceDetailsScreenState extends State<DeviceDetailsScreen> {
   @override
   void dispose() {
     _firmwareUpdateProgressSubscription?.cancel();
-    print("🔌 Stopping ANT+ search before closing BLE connection...");
+    log.i("Stopping ANT+ search before closing BLE connection...");
     
     // Stop ANT+ search and disconnect BLE in a fire-and-forget manner
     _cleanupConnections();
@@ -312,14 +319,14 @@ class DeviceDetailsScreenState extends State<DeviceDetailsScreen> {
     try {
       await _antService.stopAntSearch(widget.device); // ✅ Stop ANT+ scanning first
     } catch (e) {
-      print("❌ Failed to stop ANT+ search: $e");
+      log.e("Failed to stop ANT+ search: $e");
     }
 
-    print("🔌 Disconnecting BLE connection...");
+    log.i("Disconnecting BLE connection...");
     try {
       await _antService.disconnectDevice(widget.device); // ✅ Properly disconnect BLE
     } catch (e) {
-      print("❌ Failed to disconnect BLE: $e");
+      log.e("Failed to disconnect BLE: $e");
     }
   }
 

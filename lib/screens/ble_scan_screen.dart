@@ -4,6 +4,7 @@ import 'package:permission_handler/permission_handler.dart';
 import 'dart:async';
 import '../services/ble_service.dart';
 import '../screens/device_details_screen.dart';
+import 'package:logger/logger.dart';
 
 class BleScanScreen extends StatefulWidget {
   const BleScanScreen({super.key});
@@ -21,6 +22,7 @@ class BleScanScreenState extends State<BleScanScreen> {
   StreamSubscription<BluetoothAdapterState>? _bleStatusSubscription;
   DeviceIdentifier? _previouslySelectedDeviceId;
   Timer? _scanTimeoutTimer;
+  final log = Logger();
 
   @override
   void initState() {
@@ -61,7 +63,7 @@ class BleScanScreenState extends State<BleScanScreen> {
           statuses[Permission.location]!.isGranted) {
         _startScan();
       } else {
-        print("❌ Permissions not granted!");
+        log.e("Permissions not granted!");
       }
     }
   }
@@ -103,7 +105,7 @@ class BleScanScreenState extends State<BleScanScreen> {
 
   /// ✅ Select BLE Device and Navigate to a New Instance of Device Details Screen
   void _selectDevice(BluetoothDevice device) {
-    print("✅ Selected BLE Device: ${device.remoteId}");
+    log.i("Selected BLE Device: ${device.remoteId}");
 
     _stopScan();
 

@@ -1,7 +1,7 @@
 import 'dart:async';
-import 'package:flutter/foundation.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:nordic_dfu/nordic_dfu.dart';
+import '../utils/logger.dart';
 
 import '../utils/ble_constants.dart';
 
@@ -35,17 +35,17 @@ class DfuService {
 
     final handler = DfuEventHandler(
       onDeviceDisconnecting: (address) {
-        debugPrint("🔌 Disconnecting from $address");
+        log.i("Disconnecting from $address");
       },
       onProgressChanged: (address, percent, speed, avgSpeed, currentPart, partsTotal) {
-        debugPrint("📶 Progress: $percent%");
+        log.i("Progress: $percent%");
         _progressController.add(DfuProgressState(
           progress: percent / 100,
           state: 'UPLOADING',
         ));
       },
       onDfuCompleted: (address) {
-        debugPrint("✅ DFU complete for $address");
+        log.i("DFU complete for $address");
         _progressController.add(DfuProgressState(
           progress: 1.0,
           state: 'COMPLETED',
@@ -84,7 +84,7 @@ class DfuService {
   }
 
   void _emitError(String message) {
-    debugPrint("❌ $message");
+    log.e(message);
     _progressController.add(DfuProgressState(
       progress: 0,
       state: 'ERROR',
@@ -97,11 +97,11 @@ class DfuService {
     int retryCount = 0;
     while (retryCount < _maxRetries) {
       try {
-        print("📡 Triggering DFU mode... (Attempt ${retryCount + 1}/$_maxRetries)");
+        log.i("Triggering DFU mode... (Attempt ${retryCount + 1}/$_maxRetries)");
         
         // Ensure device is connected
         if (!device.isConnected) {
-          print("🔌 Device not connected, attempting to connect...");
+          log.i("Device not connected, attempting to connect...");
           await device.connect(timeout: const Duration(seconds: 5));
           await Future.delayed(const Duration(milliseconds: 500)); // Give it time to stabilize
         }
@@ -126,26 +126,26 @@ class DfuService {
         // Send DFU trigger command (0x05)
         await characteristic.write([0x05], withoutResponse: false).catchError((e) {
           if (e.toString().contains('133')) {
-            print("⚠️ GATT_ERROR 133 after DFU trigger — expected during reboot");
+            log.w("GATT_ERROR 133 after DFU trigger — expected during reboot");
           } else {
             throw e;
           }
         });
 
-        print("✅ DFU trigger command sent — device may disconnect immediately");
+        log.i("DFU trigger command sent — device may disconnect immediately");
         await device.disconnect();
         await Future.delayed(Duration(seconds: 1)); // Let it reboot
         return;
 
       } catch (e) {
         retryCount++;
-        print("❌ Attempt $retryCount failed: $e");
+        log.e("Attempt $retryCount failed: $e");
         
         if (retryCount < _maxRetries) {
-          print("⏳ Waiting before retry...");
+          log.i("Waiting before retry...");
           await Future.delayed(_retryDelay);
         } else {
-          print("❌ All retry attempts failed");
+          log.e("All retry attempts failed");
           rethrow;
         }
       }
@@ -169,14 +169,14 @@ class DfuService {
         state: 'SCANNING_FOR_BOOTLOADER',
       ));
       
-      print("🔍 Scanning for DFU bootloader (BikeUpdate)...");
+      log.i("Scanning for DFU bootloader (BikeUpdate)...");
       final completer = Completer<BluetoothDevice>();
 
       final scanSub = FlutterBluePlus.scanResults.listen((results) {
         for (final result in results) {
           final name = result.device.platformName;
           if (name == _dfuDeviceName) {
-            print("✅ Found DFU Bootloader: ${result.device.remoteId.str}");
+            log.i("Found DFU Bootloader: ${result.device.remoteId.str}");
             completer.complete(result.device);
             break;
           }
