@@ -96,7 +96,10 @@ class _DeviceDetailsScreenState extends State<DeviceDetailsScreen> {
     _antService.startAntSearch(widget.device).listen((antDevice) {
       if (mounted) {
         setState(() {
+          // Add the new device to the list
           _antDevices.add(antDevice);
+          // Sort the list by RSSI (strongest signal first)
+          _antDevices.sort((a, b) => b['rssi'].compareTo(a['rssi']));
         });
       }
     });

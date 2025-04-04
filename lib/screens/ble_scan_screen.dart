@@ -211,10 +211,11 @@ class BleScanScreenState extends State<BleScanScreen> {
                     itemCount: _devices.length,
                     itemBuilder: (context, index) {
                       final device = _devices[index];
+                      final rssi = _bleService.getRssi(device);
                       return ListTile(
                         leading: const Icon(Icons.directions_bike, color: Colors.blue),
                         title: Text(device.platformName.isNotEmpty ? device.platformName : "Unknown Device"),
-                        subtitle: Text("Device: ${device.platformName}"),
+                        subtitle: Text("RSSI: ${rssi ?? 'N/A'} dBm"),
                         trailing: ElevatedButton(
                           onPressed: () => _selectDevice(device),
                           child: const Text("Select"),

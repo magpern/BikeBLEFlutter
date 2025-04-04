@@ -123,6 +123,8 @@ class DfuService {
           throw Exception('Characteristic is not writable');
         }
 
+        await characteristic.write([0x02], withoutResponse: false);
+        await Future.delayed(Duration(milliseconds: 300));
         // Send DFU trigger command (0x05)
         await characteristic.write([0x05], withoutResponse: false).catchError((e) {
           if (e.toString().contains('133')) {

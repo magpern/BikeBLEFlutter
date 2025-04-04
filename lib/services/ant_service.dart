@@ -121,7 +121,8 @@ class AntService {
         if (data.length < 3) continue;
 
         final deviceId = data[0] | (data[1] << 8);
-        final rssi = data[2];
+        // Convert RSSI to signed 8-bit integer
+        final rssi = data[2].toSigned(8);
 
         log.i("ANT+ Device Found: ID=$deviceId, RSSI=$rssi dBm");
         yield {
