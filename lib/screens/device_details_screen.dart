@@ -256,14 +256,14 @@ class _DeviceDetailsScreenState extends State<DeviceDetailsScreen> {
               log.i('UI state updated: progress=$_updateProgress, state=$_updateState');
             });
 
-            // Check if we've reached the COMPLETED state
-            if (progress.state == 'COMPLETED') {
-              log.i('Firmware update completed, preparing to return to main screen');
+            // Check if we've reached the COMPLETED or ABORTED state
+            if (progress.state == 'COMPLETED' || progress.state == 'ABORTED') {
+              log.i('Firmware update ${progress.state.toLowerCase()}, preparing to return to main screen');
               setState(() {
                 _isUpdatingFirmware = false;
               });
               ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Firmware update completed')),
+                SnackBar(content: Text('Firmware update ${progress.state.toLowerCase()}')),
               );
               
               // Wait 2 seconds and then return to main screen
@@ -292,6 +292,14 @@ class _DeviceDetailsScreenState extends State<DeviceDetailsScreen> {
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(content: Text('Update failed: $error')),
             );
+            // Also return to main screen on error after delay
+            Future.delayed(const Duration(seconds: 2), () {
+              if (mounted) {
+                log.i('Attempting to return to main screen after error');
+                Navigator.of(context).pop();
+                _firmwareUpdateProgressSubscription?.cancel();
+              }
+            });
           }
         },
       );
