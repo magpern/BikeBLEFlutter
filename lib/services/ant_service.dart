@@ -284,6 +284,12 @@ class AntService {
       await _dfuService.performFullDfu(device, filePath);
 
       log.i("Firmware update process started via DFU Bootloader");
+      
+      // Wait for the update to complete
+      await _dfuService.progressStream.firstWhere((state) => state.state == 'COMPLETED');
+      
+      // Close the stream after completion
+      _dfuService.dispose();
     } catch (e) {
       log.e("Failed to start full firmware update: $e");
       rethrow;

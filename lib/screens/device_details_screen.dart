@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import '../services/ant_service.dart';
 import '../services/dfu_service.dart';
+import 'ble_scan_screen.dart';
 import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 import 'dart:io';
@@ -254,6 +255,29 @@ class _DeviceDetailsScreenState extends State<DeviceDetailsScreen> {
               _updateState = progress.state;
               log.i('UI state updated: progress=$_updateProgress, state=$_updateState');
             });
+
+            // Check if we've reached the COMPLETED state
+            if (progress.state == 'COMPLETED') {
+              log.i('Firmware update completed, preparing to return to main screen');
+              setState(() {
+                _isUpdatingFirmware = false;
+              });
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Firmware update completed')),
+              );
+              
+              // Wait 2 seconds and then return to main screen
+              Future.delayed(const Duration(seconds: 2), () {
+                if (mounted) {
+                  log.i('Attempting to return to main screen');
+                  Navigator.of(context).pop();
+                  // Cancel the subscription after navigation
+                  _firmwareUpdateProgressSubscription?.cancel();
+                } else {
+                  log.w('Widget not mounted when attempting to return to main screen');
+                }
+              });
+            }
           } else {
             log.w('UI not mounted when receiving progress update');
           }
@@ -268,18 +292,6 @@ class _DeviceDetailsScreenState extends State<DeviceDetailsScreen> {
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(content: Text('Update failed: $error')),
             );
-          }
-        },
-        onDone: () {
-          if (mounted) {
-            log.i('Progress stream completed');
-            setState(() {
-              _isUpdatingFirmware = false;
-            });
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('Firmware update completed')),
-            );
-            _fetchDeviceInfo();
           }
         },
       );
@@ -325,11 +337,13 @@ class _DeviceDetailsScreenState extends State<DeviceDetailsScreen> {
 
   @override
   void dispose() {
-    _firmwareUpdateProgressSubscription?.cancel();
-    log.i("Stopping ANT+ search before closing BLE connection...");
-    
-    // Stop ANT+ search and disconnect BLE in a fire-and-forget manner
-    _cleanupConnections();
+    if (!_isUpdatingFirmware) {
+      _firmwareUpdateProgressSubscription?.cancel();
+      log.i("Stopping ANT+ search before closing BLE connection...");
+      
+      // Stop ANT+ search and disconnect BLE in a fire-and-forget manner
+      _cleanupConnections();
+    }
     
     super.dispose(); // Call super.dispose() immediately
   }
