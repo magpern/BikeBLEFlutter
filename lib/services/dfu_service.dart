@@ -39,6 +39,7 @@ class DfuService {
       },
       onProgressChanged: (address, percent, speed, avgSpeed, currentPart, partsTotal) {
         log.i("Progress: $percent%");
+        log.i("Emitting progress update: ${percent / 100} - UPLOADING");
         _progressController.add(DfuProgressState(
           progress: percent / 100,
           state: 'UPLOADING',
@@ -46,12 +47,14 @@ class DfuService {
       },
       onDfuCompleted: (address) {
         log.i("DFU complete for $address");
+        log.i("Emitting completion update: 1.0 - COMPLETED");
         _progressController.add(DfuProgressState(
           progress: 1.0,
           state: 'COMPLETED',
         ));
       },
       onError: (address, error, code, type) {
+        log.e("DFU error: $error");
         _emitError("DFU failed: $error");
       },
     );

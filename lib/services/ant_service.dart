@@ -301,5 +301,5 @@ class AntService {
   }
 
   /// Get Firmware Update Progress Stream
-  Stream<dynamic> get firmwareUpdateProgress => _dfuService.progressStream;
+  Stream<DfuProgressState> get firmwareUpdateProgress => _dfuService.progressStream;
 }

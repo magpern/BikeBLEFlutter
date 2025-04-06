@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import '../services/ant_service.dart';
+import '../services/dfu_service.dart';
 import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 import 'dart:io';
@@ -31,6 +32,8 @@ class _DeviceDetailsScreenState extends State<DeviceDetailsScreen> {
   bool _isFetchingData = true;
   bool _isUpdatingFirmware = false;
   String? _updateError;
+  double _updateProgress = 0.0;
+  String _updateState = '';
   final List<Map<String, dynamic>> _antDevices = [];
   StreamSubscription? _firmwareUpdateProgressSubscription;
 
@@ -211,6 +214,8 @@ class _DeviceDetailsScreenState extends State<DeviceDetailsScreen> {
     setState(() {
       _isUpdatingFirmware = true;
       _updateError = null;
+      _updateProgress = 0.0;
+      _updateState = 'PREPARING';
     });
 
     try {
@@ -236,19 +241,26 @@ class _DeviceDetailsScreenState extends State<DeviceDetailsScreen> {
       log.i('Firmware saved to: $filePath');
       log.i('Firmware size: $fileSize bytes (${(fileSize / 1024).toStringAsFixed(2)} KB)');
 
-      // Start firmware update
-      await _antService.updateFirmware(widget.device, filePath);
-
-      // Listen to update progress
+      // Set up progress stream subscription before starting the update
       _firmwareUpdateProgressSubscription?.cancel();
+      log.i("Setting up progress stream subscription");
       _firmwareUpdateProgressSubscription = _antService.firmwareUpdateProgress.listen(
-        (progress) {
+        (DfuProgressState progress) {
           if (mounted) {
-            log.i('Update progress: ${(progress.progress * 100).toStringAsFixed(1)}%');
+            log.i('UI received progress update: ${progress.progress} - ${progress.state}');
+            log.i('Current UI state: mounted=$mounted, _isUpdatingFirmware=$_isUpdatingFirmware');
+            setState(() {
+              _updateProgress = progress.progress;
+              _updateState = progress.state;
+              log.i('UI state updated: progress=$_updateProgress, state=$_updateState');
+            });
+          } else {
+            log.w('UI not mounted when receiving progress update');
           }
         },
         onError: (error) {
           if (mounted) {
+            log.e('Progress stream error: $error');
             setState(() {
               _updateError = error.toString();
               _isUpdatingFirmware = false;
@@ -260,6 +272,7 @@ class _DeviceDetailsScreenState extends State<DeviceDetailsScreen> {
         },
         onDone: () {
           if (mounted) {
+            log.i('Progress stream completed');
             setState(() {
               _isUpdatingFirmware = false;
             });
@@ -270,6 +283,10 @@ class _DeviceDetailsScreenState extends State<DeviceDetailsScreen> {
           }
         },
       );
+      log.i("Progress stream subscription set up");
+
+      // Start firmware update after setting up the subscription
+      await _antService.updateFirmware(widget.device, filePath);
     } catch (e) {
       log.e("Error updating firmware: $e");
       if (mounted) {
@@ -353,7 +370,12 @@ class _DeviceDetailsScreenState extends State<DeviceDetailsScreen> {
                       Text("📱 Firmware Version: $_currentFirmwareVersion", style: const TextStyle(fontSize: 18)),
                       if (_isUpdatingFirmware) ...[
                         const SizedBox(height: 8),
-                        LinearProgressIndicator(),
+                        LinearProgressIndicator(value: _updateProgress),
+                        const SizedBox(height: 8),
+                        Text(
+                          '${(_updateProgress * 100).toStringAsFixed(1)}% - $_updateState',
+                          style: const TextStyle(fontSize: 16),
+                        ),
                         const SizedBox(height: 8),
                         ElevatedButton(
                           onPressed: _cancelFirmwareUpdate,
@@ -367,26 +389,28 @@ class _DeviceDetailsScreenState extends State<DeviceDetailsScreen> {
                       const SizedBox(height: 20),
                     ],
                   ),
-            const SizedBox(height: 20),
-            const Text("🔍 Found ANT+ Devices:", style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
-            Expanded(
-              child: _antDevices.isEmpty
-                  ? Center(child: CircularProgressIndicator())
-                  : ListView.builder(
-                      itemCount: _antDevices.length,
-                      itemBuilder: (context, index) {
-                        final antDevice = _antDevices[index];
-                        return ListTile(
-                          title: Text("Device ID: ${antDevice['deviceId']}"),
-                          subtitle: Text("RSSI: ${antDevice['rssi']} dBm"),
-                          trailing: ElevatedButton(
-                            onPressed: () => _saveSelectedAntDevice(antDevice['deviceId']),
-                            child: Text("Select"),
-                          ),
-                        );
-                      },
-                    ),
-            ),
+            if (!_isUpdatingFirmware) ...[
+              const SizedBox(height: 20),
+              const Text("🔍 Found ANT+ Devices:", style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+              Expanded(
+                child: _antDevices.isEmpty
+                    ? const Center(child: CircularProgressIndicator())
+                    : ListView.builder(
+                        itemCount: _antDevices.length,
+                        itemBuilder: (context, index) {
+                          final antDevice = _antDevices[index];
+                          return ListTile(
+                            title: Text("Device ID: ${antDevice['deviceId']}"),
+                            subtitle: Text("RSSI: ${antDevice['rssi']} dBm"),
+                            trailing: ElevatedButton(
+                              onPressed: () => _saveSelectedAntDevice(antDevice['deviceId']),
+                              child: const Text("Select"),
+                            ),
+                          );
+                        },
+                      ),
+              ),
+            ],
           ],
         ),
       ),
