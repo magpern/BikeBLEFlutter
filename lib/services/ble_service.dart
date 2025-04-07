@@ -12,7 +12,7 @@ class BleService {
     return _deviceRssi[device.remoteId.str];
   }
 
-  /// Scan for BLE devices advertising FTMS and Custom Service
+  /// Scan for BLE devices advertising all required services
   Stream<List<BluetoothDevice>> scanForDevices() {
     _foundDevices.clear();
     _deviceRssi.clear(); // Clear RSSI values
@@ -30,10 +30,15 @@ class BleService {
         log.i("Services: ${r.advertisementData.serviceUuids}");
         log.i("RSSI: ${r.rssi} dBm"); // Log the RSSI value
         
-        // Check if device advertises our required services
-        if (r.advertisementData.serviceUuids.contains(BleConstants.ftmsService) ||
-            r.advertisementData.serviceUuids.contains(BleConstants.customService)) {
-          log.i("Found matching device: ${r.device.platformName}");
+        // Check if device advertises ALL required services
+        final advertisedServices = r.advertisementData.serviceUuids;
+        final hasAllRequiredServices = 
+          advertisedServices.contains(BleConstants.ftmsService) && // 0x1826
+          advertisedServices.contains(BleConstants.cyclingPowerService) && // 0x1818
+          advertisedServices.contains(BleConstants.customService); // 0x1600
+
+        if (hasAllRequiredServices) {
+          log.i("Found matching device with all required services: ${r.device.platformName}");
           
           // Store/update RSSI value
           _deviceRssi[r.device.remoteId.str] = r.rssi;
@@ -55,8 +60,9 @@ class BleService {
   Future<void> startScan() async {
     await FlutterBluePlus.startScan(
       withServices: [
-        Guid(BleConstants.ftmsService.str),
-        Guid(BleConstants.customService.str),
+        Guid(BleConstants.ftmsService.str), // 0x1826
+        Guid(BleConstants.cyclingPowerService.str), // 0x1818
+        Guid(BleConstants.customService.str), // 0x1600
       ],
     );
   }

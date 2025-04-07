@@ -5,6 +5,9 @@ class BleConstants {
   // FTMS Service (Fitness Machine)
   static final Guid ftmsService = Guid("00001826-0000-1000-8000-00805f9b34fb");
 
+  // Cycling Power Service
+  static final Guid cyclingPowerService = Guid("00001818-0000-1000-8000-00805f9b34fb");
+
   // Custom ANT+ BLE Service (0x1600)
   static final Guid customService = Guid("00001600-0000-1000-8000-00805f9b34fb");
 
@@ -40,6 +43,7 @@ class BleConstants {
 
   // Getters for each UUID
   static Guid get ftmsServiceUuid => ftmsService;
+  static Guid get cyclingPowerServiceUuid => cyclingPowerService;
   static Guid get customServiceUuid => customService;
   static Guid get deviceInfoServiceUuid => deviceInfoService;
   static Guid get manufacturerCharUuid => manufacturerChar;
