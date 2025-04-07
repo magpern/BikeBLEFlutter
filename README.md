@@ -1,4 +1,4 @@
-# satsbike_scanner
+# BikeBLE_scanner
 
 A new Flutter project.
 

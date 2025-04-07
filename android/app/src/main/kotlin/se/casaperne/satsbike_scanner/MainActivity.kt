@@ -1,4 +1,4 @@
-package com.example.satsbike_scanner
+package se.casaperne.BikeBLE_scanner
 
 import io.flutter.embedding.android.FlutterActivity
 
