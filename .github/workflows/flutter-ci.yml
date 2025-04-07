@@ -1,10 +1,10 @@
 name: Flutter CI/CD
 
 on:
-  workflow_dispatch:  # 👈 Manual trigger
+  workflow_dispatch:  #  Manual trigger
   push:
     tags:
-      - '*'           # 👈 Only run on tags
+      - '*'           #  Only run on tags
     branches: [ main ]
   pull_request:
     branches: [ main ]
@@ -58,14 +58,14 @@ jobs:
 
       - name: Rename AAB
         run: |
-          mv android/app/build/outputs/bundle/release/app-release.aab android/app/build/outputs/bundle/release/BikeBLE_Config-${{ steps.version.outputs.version }}.aab
+          mv build/app/outputs/bundle/release/app-release.aab build/app/outputs/bundle/release/BikeBLE_Config-${{ steps.version.outputs.version }}.aab
       
       - name: Upload AAB artifact
         uses: actions/upload-artifact@v4
         with:
           name: release-aab
           path: build/app/outputs/bundle/release/BikeBLE_Config-${{ steps.version.outputs.version }}.aab
-
+      
       - name: Upload to GitHub Release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v1
@@ -112,6 +112,6 @@ jobs:
         with:
           serviceAccountJsonPlainText: ${{ secrets.PLAYSTORE_SERVICE_ACCOUNT_JSON }}
           packageName: se.casaperne.BikeBLE_scanner
-          releaseFiles: BikeBLE_Config-${{ steps.version.outputs.version }}.aab
+          releaseFiles: build/app/outputs/bundle/release/BikeBLE_Config-${{ steps.version.outputs.version }}.aab
           track: production
           status: completed
