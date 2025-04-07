@@ -1,34 +1,46 @@
 name: Flutter CI/CD
 
 on:
+  workflow_dispatch:  # 👈 Manual trigger
   push:
-    branches: [ "main" ]
+    tags:
+      - '*'           # 👈 Only run on tags
+    branches: [ main ]
   pull_request:
-    branches: [ "main" ]
-  release:
-    types: [created]
+    branches: [ main ]
+
+permissions:
+  contents: write
 
 jobs:
   build:
     runs-on: ubuntu-latest
+    if: "!contains(github.event.head_commit.message, 'skip ci') && !contains(github.event.head_commit.message, 'skip release')"
     steps:
-      - uses: actions/checkout@v3
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-      # Set up Java
-      - name: Setup Java
+      - name: Derive version from Git
+        id: version
+        run: |
+          TAG=$(git describe --tags --abbrev=0)
+          SHA=$(git rev-parse --short HEAD)
+          VERSION="${TAG#v}-${SHA}"
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Using version: $VERSION"
+
+      - name: Set up Java
         uses: actions/setup-java@v3
         with:
           distribution: 'zulu'
           java-version: '17'
 
-      # Set up Flutter
-      - name: Setup Flutter
+      - name: Set up Flutter
         uses: subosito/flutter-action@v2
         with:
           flutter-version: '3.19.0'
-          channel: 'stable'
+          channel: stable
 
-      # Cache Flutter dependencies
       - name: Cache Flutter dependencies
         uses: actions/cache@v3
         with:
@@ -38,80 +50,66 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-pub-
 
-      # Optional: upgrade dependencies
-      - name: Upgrade dependencies
-        run: flutter pub upgrade
-
-      # Get dependencies
       - name: Get dependencies
         run: flutter pub get
 
-      # Run tests
       - name: Run tests
         run: flutter test
 
-      # Extract app version from pubspec.yaml
-      - name: Get version
-        id: version
-        run: |
-          VERSION=$(grep 'version:' pubspec.yaml | cut -d' ' -f2)
-          echo "Extracted version: $VERSION"
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
-
-      # Build AAB for Play Store
-      - name: Build app bundle (AAB)
+      - name: Build release AAB
         run: flutter build appbundle --release
 
-      # Rename AAB file
       - name: Rename AAB
         run: |
           mv build/app/outputs/bundle/release/app-release.aab build/app/outputs/bundle/release/BikeBLE_Config-${{ steps.version.outputs.version }}.aab
 
-      # Upload AAB as an artifact
       - name: Upload AAB artifact
         uses: actions/upload-artifact@v3
         with:
           name: release-aab
           path: build/app/outputs/bundle/release/BikeBLE_Config-${{ steps.version.outputs.version }}.aab
 
+      - name: Upload to GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v1
+        with:
+          files: build/app/outputs/bundle/release/BikeBLE_Config-${{ steps.version.outputs.version }}.aab
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
   deploy:
     needs: build
-    if: github.event_name == 'release'
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
-    environment:
-      name: production
     steps:
-      - uses: actions/checkout@v3
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-      # Setup Java
-      - name: Setup Java
+      - name: Set up Java
         uses: actions/setup-java@v3
         with:
           distribution: 'zulu'
           java-version: '17'
 
-      # Setup Flutter
-      - name: Setup Flutter
+      - name: Set up Flutter
         uses: subosito/flutter-action@v2
         with:
           flutter-version: '3.19.0'
-          channel: 'stable'
+          channel: stable
 
-      # Extract version again (for renaming)
-      - name: Get version
+      - name: Derive version from Git
         id: version
         run: |
-          VERSION=$(grep 'version:' pubspec.yaml | cut -d' ' -f2)
-          echo "Extracted version: $VERSION"
+          TAG=$(git describe --tags --abbrev=0)
+          SHA=$(git rev-parse --short HEAD)
+          VERSION="${TAG#v}-${SHA}"
           echo "version=$VERSION" >> $GITHUB_OUTPUT
 
-      # Download previously built AAB artifact
       - name: Download AAB artifact
         uses: actions/download-artifact@v3
         with:
           name: release-aab
 
-      # Upload to Google Play Store
       - name: Upload to Play Store
         uses: r0adkll/upload-google-play@v1
         with:
