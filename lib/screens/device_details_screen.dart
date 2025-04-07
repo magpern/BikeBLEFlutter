@@ -37,6 +37,7 @@ class _DeviceDetailsScreenState extends State<DeviceDetailsScreen> {
   String _updateState = '';
   final List<Map<String, dynamic>> _antDevices = [];
   StreamSubscription? _firmwareUpdateProgressSubscription;
+  final _deviceNameRegex = RegExp(r'^[A-Za-z0-9]{1,8}$');
 
   @override
   void initState() {
@@ -372,15 +373,226 @@ class _DeviceDetailsScreenState extends State<DeviceDetailsScreen> {
     }
   }
 
+  /// Show dialog to edit device name
+  void _showEditNameDialog() {
+    final TextEditingController nameController = TextEditingController();
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Edit Device Name'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: nameController,
+              decoration: const InputDecoration(
+                labelText: 'Device Name',
+                helperText: 'Use A-Z, a-z, 0-9 (max 8 characters)',
+              ),
+              maxLength: 8,
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              final newName = nameController.text;
+              if (!_deviceNameRegex.hasMatch(newName)) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Invalid name format')),
+                );
+                return;
+              }
+              Navigator.pop(context);
+              await _updateDeviceName(newName);
+            },
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Show dialog to edit device ID
+  void _showEditDeviceIdDialog() {
+    final TextEditingController idController = TextEditingController();
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Edit Device ID'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: idController,
+              decoration: const InputDecoration(
+                labelText: 'Device ID',
+                helperText: 'Enter a number between 0 and 65535',
+              ),
+              keyboardType: TextInputType.number,
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              final newId = int.tryParse(idController.text);
+              if (newId == null || newId < 0 || newId > 65535) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Invalid ID (must be 0-65535)')),
+                );
+                return;
+              }
+              Navigator.pop(context);
+              await _updateDeviceId(newId);
+            },
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Update device name in characteristic 0x1524
+  Future<void> _updateDeviceName(String newName) async {
+    try {
+      final services = await widget.device.discoverServices();
+      final service = services.firstWhere(
+        (s) => s.serviceUuid == Guid("00001523-0000-1000-8000-00805f9b34fb"),
+      );
+      
+      final characteristic = service.characteristics.firstWhere(
+        (c) => c.characteristicUuid == Guid("00001524-0000-1000-8000-00805f9b34fb"),
+      );
+
+      // Convert current device ID to bytes
+      final deviceId = int.tryParse(_deviceId) ?? 0;
+      final List<int> value = [
+        deviceId & 0xFF,
+        (deviceId >> 8) & 0xFF,
+        newName.length,
+        ...newName.codeUnits
+      ];
+
+      await characteristic.write(value, withoutResponse: false);
+      log.i("Device name updated successfully");
+      
+      // Return to main screen as device will reboot
+      if (mounted) {
+        Navigator.of(context).pushAndRemoveUntil(
+          MaterialPageRoute(builder: (context) => const BleScanScreen()),
+          (route) => false,
+        );
+      }
+    } catch (e) {
+      log.e("Failed to update device name: $e");
+      if (mounted) {
+        setState(() {
+          _updateError = "Failed to update device name: $e";
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(_updateError!)),
+        );
+      }
+    }
+  }
+
+  /// Update device ID using ANT+ service
+  Future<void> _updateDeviceId(int newId) async {
+    try {
+      await _antService.saveSelectedAntDevice(widget.device, newId);
+      log.i("Device ID updated successfully");
+      
+      // Return to main screen as device will reboot
+      if (mounted) {
+        Navigator.of(context).pushAndRemoveUntil(
+          MaterialPageRoute(builder: (context) => const BleScanScreen()),
+          (route) => false,
+        );
+      }
+    } catch (e) {
+      log.e("Failed to update device ID: $e");
+      if (mounted) {
+        setState(() {
+          _updateError = "Failed to update device ID: $e";
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(_updateError!)),
+        );
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text(_deviceName)),
+      appBar: AppBar(
+        title: Text(_deviceName),
+        actions: [
+          PopupMenuButton<String>(
+            onSelected: (value) {
+              switch (value) {
+                case 'edit_name':
+                  _showEditNameDialog();
+                  break;
+                case 'edit_id':
+                  _showEditDeviceIdDialog();
+                  break;
+              }
+            },
+            itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
+              const PopupMenuItem<String>(
+                value: 'edit_name',
+                child: Text('Edit Device Name'),
+              ),
+              const PopupMenuItem<String>(
+                value: 'edit_id',
+                child: Text('Edit Device ID'),
+              ),
+            ],
+          ),
+        ],
+      ),
       body: Padding(
         padding: const EdgeInsets.all(16.0),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            if (_updateError != null) ...[
+              Container(
+                padding: const EdgeInsets.all(8.0),
+                color: Colors.red[100],
+                child: Row(
+                  children: [
+                    const Icon(Icons.error_outline, color: Colors.red),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        _updateError!,
+                        style: const TextStyle(color: Colors.red),
+                      ),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.close),
+                      onPressed: () {
+                        setState(() {
+                          _updateError = null;
+                        });
+                      },
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 8),
+            ],
             _isFetchingData
                 ? const Center(child: CircularProgressIndicator())
                 : Column(
