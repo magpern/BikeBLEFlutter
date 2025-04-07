@@ -8,7 +8,6 @@ plugins {
 android {
     namespace = "se.casaperne.BikeBLE_scanner"
     compileSdk = flutter.compileSdkVersion
-    ndkVersion = "27.0.12077973" // ✅ Use the required NDK version
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
