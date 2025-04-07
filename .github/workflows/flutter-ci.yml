@@ -32,14 +32,24 @@ jobs:
       - name: Run tests
         run: flutter test
       
+      - name: Get version
+        id: version
+        run: |
+          VERSION=$(grep 'version:' pubspec.yaml | cut -d' ' -f2)
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+      
       - name: Build APK
         run: flutter build apk --release
+
+      - name: Rename APK
+        run: |
+          mv build/app/outputs/flutter-apk/app-release.apk build/app/outputs/flutter-apk/BikeBLE_Config-${{ steps.version.outputs.version }}.apk
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v3
         with:
           name: release-apk
-          path: build/app/outputs/flutter-apk/app-release.apk
+          path: build/app/outputs/flutter-apk/BikeBLE_Config-${{ steps.version.outputs.version }}.apk
 
   deploy:
     needs: build
@@ -60,6 +70,12 @@ jobs:
           flutter-version: '3.19.0'
           channel: 'stable'
       
+      - name: Get version
+        id: version
+        run: |
+          VERSION=$(grep 'version:' pubspec.yaml | cut -d' ' -f2)
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+      
       - name: Download APK artifact
         uses: actions/download-artifact@v3
         with:
@@ -79,11 +95,15 @@ jobs:
       - name: Build signed APK
         run: flutter build apk --release
 
+      - name: Rename Release APK
+        run: |
+          mv build/app/outputs/flutter-apk/app-release.apk build/app/outputs/flutter-apk/BikeBLE_Config-${{ steps.version.outputs.version }}.apk
+
       - name: Upload to Play Store
         uses: r0adkll/upload-google-play@v1
         with:
           serviceAccountJsonPlainText: ${{ secrets.PLAYSTORE_SERVICE_ACCOUNT_JSON }}
           packageName: se.casaperne.BikeBLE_scanner
-          releaseFiles: build/app/outputs/flutter-apk/app-release.apk
+          releaseFiles: build/app/outputs/flutter-apk/BikeBLE_Config-${{ steps.version.outputs.version }}.apk
           track: production
           status: completed 
