@@ -58,8 +58,8 @@ jobs:
 
       - name: Rename AAB
         run: |
-          mv build/app/outputs/bundle/release/app-release.aab build/app/outputs/bundle/release/BikeBLE_Config-${{ steps.version.outputs.version }}.aab
-
+          mv android/app/build/outputs/bundle/release/app-release.aab android/app/build/outputs/bundle/release/BikeBLE_Config-${{ steps.version.outputs.version }}.aab
+      
       - name: Upload AAB artifact
         uses: actions/upload-artifact@v4
         with:
