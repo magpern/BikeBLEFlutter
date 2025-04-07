@@ -13,97 +13,110 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
-      
+
+      # Set up Java
       - name: Setup Java
         uses: actions/setup-java@v3
         with:
           distribution: 'zulu'
           java-version: '17'
-      
+
+      # Set up Flutter
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
           flutter-version: '3.19.0'
           channel: 'stable'
-      
+
+      # Cache Flutter dependencies
+      - name: Cache Flutter dependencies
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.pub-cache
+          key: ${{ runner.os }}-pub-${{ hashFiles('**/pubspec.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pub-
+
+      # Optional: upgrade dependencies
+      - name: Upgrade dependencies
+        run: flutter pub upgrade
+
+      # Get dependencies
       - name: Get dependencies
         run: flutter pub get
-      
+
+      # Run tests
       - name: Run tests
         run: flutter test
-      
+
+      # Extract app version from pubspec.yaml
       - name: Get version
         id: version
         run: |
           VERSION=$(grep 'version:' pubspec.yaml | cut -d' ' -f2)
+          echo "Extracted version: $VERSION"
           echo "version=$VERSION" >> $GITHUB_OUTPUT
-      
-      - name: Build APK
-        run: flutter build apk --release
 
-      - name: Rename APK
+      # Build AAB for Play Store
+      - name: Build app bundle (AAB)
+        run: flutter build appbundle --release
+
+      # Rename AAB file
+      - name: Rename AAB
         run: |
-          mv build/app/outputs/flutter-apk/app-release.apk build/app/outputs/flutter-apk/BikeBLE_Config-${{ steps.version.outputs.version }}.apk
+          mv build/app/outputs/bundle/release/app-release.aab build/app/outputs/bundle/release/BikeBLE_Config-${{ steps.version.outputs.version }}.aab
 
-      - name: Upload APK artifact
+      # Upload AAB as an artifact
+      - name: Upload AAB artifact
         uses: actions/upload-artifact@v3
         with:
-          name: release-apk
-          path: build/app/outputs/flutter-apk/BikeBLE_Config-${{ steps.version.outputs.version }}.apk
+          name: release-aab
+          path: build/app/outputs/bundle/release/BikeBLE_Config-${{ steps.version.outputs.version }}.aab
 
   deploy:
     needs: build
     if: github.event_name == 'release'
     runs-on: ubuntu-latest
+    environment:
+      name: production
     steps:
       - uses: actions/checkout@v3
-      
+
+      # Setup Java
       - name: Setup Java
         uses: actions/setup-java@v3
         with:
           distribution: 'zulu'
           java-version: '17'
-      
+
+      # Setup Flutter
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
           flutter-version: '3.19.0'
           channel: 'stable'
-      
+
+      # Extract version again (for renaming)
       - name: Get version
         id: version
         run: |
           VERSION=$(grep 'version:' pubspec.yaml | cut -d' ' -f2)
+          echo "Extracted version: $VERSION"
           echo "version=$VERSION" >> $GITHUB_OUTPUT
-      
-      - name: Download APK artifact
+
+      # Download previously built AAB artifact
+      - name: Download AAB artifact
         uses: actions/download-artifact@v3
         with:
-          name: release-apk
-          
-      - name: Decode Keystore
-        run: |
-          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 --decode > android/app/keystore.jks
-          
-      - name: Create key.properties
-        run: |
-          echo "storeFile=keystore.jks" > android/key.properties
-          echo "storePassword=${{ secrets.KEYSTORE_PASSWORD }}" >> android/key.properties
-          echo "keyPassword=${{ secrets.KEY_PASSWORD }}" >> android/key.properties
-          echo "keyAlias=${{ secrets.KEY_ALIAS }}" >> android/key.properties
-          
-      - name: Build signed APK
-        run: flutter build apk --release
+          name: release-aab
 
-      - name: Rename Release APK
-        run: |
-          mv build/app/outputs/flutter-apk/app-release.apk build/app/outputs/flutter-apk/BikeBLE_Config-${{ steps.version.outputs.version }}.apk
-
+      # Upload to Google Play Store
       - name: Upload to Play Store
         uses: r0adkll/upload-google-play@v1
         with:
           serviceAccountJsonPlainText: ${{ secrets.PLAYSTORE_SERVICE_ACCOUNT_JSON }}
           packageName: se.casaperne.BikeBLE_scanner
-          releaseFiles: build/app/outputs/flutter-apk/BikeBLE_Config-${{ steps.version.outputs.version }}.apk
+          releaseFiles: BikeBLE_Config-${{ steps.version.outputs.version }}.aab
           track: production
-          status: completed 
+          status: completed
