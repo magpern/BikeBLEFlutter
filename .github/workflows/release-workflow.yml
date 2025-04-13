@@ -88,14 +88,14 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y qrencode
           DOWNLOAD_URL="https://github.com/magpern/Bike2FTMS/releases/latest/download/BikeBLE_Config-${{ steps.version.outputs.version }}.apk"
-          qrencode -o website/qrcode.png -s 10 "$DOWNLOAD_URL"
+          qrencode -o docs/qrcode.png -s 10 "$DOWNLOAD_URL"
           
       - name: Update QR code in HTML
         if: startsWith(github.ref, 'refs/tags/')
         run: |
-          sed -i 's|<div class="qr-placeholder" id="qr-code">.*<div class="qr-text">QR Code</div>.*</div>|<div class="qr-placeholder" id="qr-code"><img src="qrcode.png" alt="QR Code for App Download"></div>|g' website/index.html
+          sed -i 's|<div class="qr-placeholder" id="qr-code">.*<div class="qr-text">QR Code</div>.*</div>|<div class="qr-placeholder" id="qr-code"><img src="qrcode.png" alt="QR Code for App Download"></div>|g' docs/index.html
           # Update download link to APK instead of AAB
-          sed -i 's|BikeBLE_Config.apk|BikeBLE_Config-${{ steps.version.outputs.version }}.apk|g' website/index.html
+          sed -i 's|BikeBLE_Config.apk|BikeBLE_Config-${{ steps.version.outputs.version }}.apk|g' docs/index.html
           
       - name: Upload Pages artifact
         if: startsWith(github.ref, 'refs/tags/')
