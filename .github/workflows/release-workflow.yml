@@ -97,6 +97,9 @@ jobs:
         run: |
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
+          # Create a new branch for the docs update
+          git checkout -b docs-update-${{ steps.version.outputs.version }}
           git add docs/qrcode.png docs/index.html
           git commit -m "Update QR code and download link for release ${{ steps.version.outputs.version }}"
-          git push 
+          # Push to the main branch
+          git push origin HEAD:main 
