@@ -59,7 +59,7 @@ class GitHubService {
   }
 
   /// Fetch latest release information from GitHub
-  Future<Map<String, dynamic>> getLatestRelease() async {
+  Future<Map<String, dynamic>> getLatestRelease({String? hardwareVersion}) async {
     try {
       final response = await http.get(
         Uri.parse('$_baseUrl/repos/$_repoOwner/$_repoName/releases/latest'),
@@ -69,17 +69,41 @@ class GitHubService {
         final data = json.decode(response.body);
         final version = data['tag_name'] as String;
         
-        // Find the first asset with .zip extension
+        // Find the zip asset matching the hardware version if specified
         final assets = data['assets'] as List;
-        final zipAsset = assets.firstWhere(
+        
+        Map<String, dynamic>? matchingAsset;
+        
+        if (hardwareVersion != null) {
+          // Extract hardware identifier from Rev_ prefix (e.g., "Rev_promicro" -> "promicro")
+          String hardwareId = "";
+          final revPrefix = "Rev_";
+          if (hardwareVersion.startsWith(revPrefix)) {
+            hardwareId = hardwareVersion.substring(revPrefix.length);
+          }
+          
+          if (hardwareId.isNotEmpty) {
+            // Look for a specific asset with the hardware ID in its name
+            matchingAsset = assets.firstWhere(
+              (asset) => 
+                asset['name'].toString().contains(hardwareId) && 
+                asset['name'].toString().endsWith('.zip'),
+              orElse: () => null,
+            );
+          }
+        }
+        
+        // If no hardware-specific asset found or no hardware version specified,
+        // fall back to the first zip asset
+        matchingAsset ??= assets.firstWhere(
           (asset) => asset['name'].toString().endsWith('.zip'),
           orElse: () => null,
         );
 
-        if (zipAsset != null) {
+        if (matchingAsset != null) {
           return {
             'version': version,
-            'downloadUrl': zipAsset['browser_download_url'] as String,
+            'downloadUrl': matchingAsset['browser_download_url'] as String,
             'success': true,
           };
         }

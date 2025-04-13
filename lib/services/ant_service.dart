@@ -239,6 +239,41 @@ class AntService {
     }
   }
 
+  /// Get Hardware Version Information
+  Future<String> getHardwareVersion(BluetoothDevice device) async {
+    try {
+      log.i("Requesting hardware version...");
+      await connectDevice(device);
+      final services = await device.discoverServices();
+      
+      // Find Device Information Service (0x180A)
+      final deviceInfoService = services.firstWhere(
+        (s) => s.serviceUuid == BleConstants.deviceInfoService,
+        orElse: () => throw Exception('Device Information Service not found'),
+      );
+      
+      // Find Hardware Revision String Characteristic (0x2A27)
+      final characteristic = deviceInfoService.characteristics.firstWhere(
+        (c) => c.characteristicUuid == BleConstants.hardwareRevisionChar,
+        orElse: () => throw Exception('Hardware Revision String characteristic not found'),
+      );
+
+      final response = await characteristic.read();
+      if (response.isEmpty) {
+        log.w("Empty hardware revision response");
+        return "Unknown";
+      }
+
+      // Parse hardware version as UTF-8 string
+      String hardwareVersion = String.fromCharCodes(response);
+      log.i("Hardware Version: $hardwareVersion");
+      return hardwareVersion;
+    } catch (e) {
+      log.e("Failed to read hardware version: $e");
+      return "Unknown";
+    }
+  }
+
   /// Check for Firmware Updates
   Future<Map<String, dynamic>> checkFirmwareUpdate(BluetoothDevice device) async {
     try {
@@ -247,8 +282,11 @@ class AntService {
       // Get current firmware version from device
       final currentVersion = (await getFirmwareVersion(device))["currentVersion"];
       
+      // Get hardware version for hardware-specific firmware
+      final hardwareVersion = await getHardwareVersion(device);
+      
       // Get latest version from GitHub
-      final githubRelease = await _githubService.getLatestRelease();
+      final githubRelease = await _githubService.getLatestRelease(hardwareVersion: hardwareVersion);
       
       if (!githubRelease['success']) {
         log.e("Failed to fetch GitHub release: ${githubRelease['error']}");
@@ -261,7 +299,7 @@ class AntService {
       final latestVersion = githubRelease['version'];
       final hasUpdate = _githubService.isNewerVersion(currentVersion, latestVersion);
 
-      log.i("Firmware Update Check - Current: $currentVersion, Latest: $latestVersion, Update Available: $hasUpdate");
+      log.i("Firmware Update Check - Current: $currentVersion, Hardware: $hardwareVersion, Latest: $latestVersion, Update Available: $hasUpdate");
       return {
         "latestVersion": latestVersion,
         "hasUpdate": hasUpdate,

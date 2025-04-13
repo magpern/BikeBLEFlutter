@@ -41,6 +41,9 @@ class BleConstants {
   // Firmware Revision String Characteristic (0x2A26)
   static final Guid firmwareRevisionChar = Guid("00002A26-0000-1000-8000-00805f9b34fb");
 
+  // Hardware Revision String Characteristic (0x2A27)
+  static final Guid hardwareRevisionChar = Guid("00002A27-0000-1000-8000-00805f9b34fb");
+
   // Getters for each UUID
   static Guid get ftmsServiceUuid => ftmsService;
   static Guid get cyclingPowerServiceUuid => cyclingPowerService;
@@ -55,4 +58,5 @@ class BleConstants {
   static Guid get firmwareVersionCharUuid => firmwareVersionChar;
   static Guid get firmwareUpdateCharUuid => firmwareUpdateChar;
   static Guid get firmwareRevisionCharUuid => firmwareRevisionChar;
+  static Guid get hardwareRevisionCharUuid => hardwareRevisionChar;
 }

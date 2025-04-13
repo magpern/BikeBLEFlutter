@@ -30,6 +30,8 @@ class _DeviceDetailsScreenState extends State<DeviceDetailsScreen> {
   String _batteryStatus = "Loading...";
   String _deviceId = "Loading...";
   String _currentFirmwareVersion = "Loading...";
+  String _hardwareVersion = "Loading...";
+  int _bleRssi = 0;
   bool _isFetchingData = true;
   bool _isUpdatingFirmware = false;
   String? _updateError;
@@ -38,11 +40,26 @@ class _DeviceDetailsScreenState extends State<DeviceDetailsScreen> {
   final List<Map<String, dynamic>> _antDevices = [];
   StreamSubscription? _firmwareUpdateProgressSubscription;
   final _deviceNameRegex = RegExp(r'^[A-Za-z0-9]{1,8}$');
+  StreamSubscription<int>? _rssiSubscription;
 
   @override
   void initState() {
     super.initState();
     _fetchDeviceInfo();
+  }
+
+  @override
+  void dispose() {
+    _rssiSubscription?.cancel();
+    if (!_isUpdatingFirmware) {
+      _firmwareUpdateProgressSubscription?.cancel();
+      log.i("Stopping ANT+ search before closing BLE connection...");
+      
+      // Stop ANT+ search and disconnect BLE in a fire-and-forget manner
+      _cleanupConnections();
+    }
+    
+    super.dispose(); // Call super.dispose() immediately
   }
 
   /// ✅ Fetch Device Info in the correct order
@@ -62,6 +79,12 @@ class _DeviceDetailsScreenState extends State<DeviceDetailsScreen> {
       // ✅ 4. Read Firmware Version
       final firmwareInfo = await _antService.getFirmwareVersion(widget.device);
       final currentVersion = firmwareInfo["currentVersion"];
+      
+      // 5. Read Hardware Version
+      final hardwareVersion = await _antService.getHardwareVersion(widget.device);
+      
+      // 6. Start reading RSSI updates for BLE device
+      _startRssiUpdates();
 
       if (mounted) {
         setState(() {
@@ -69,14 +92,15 @@ class _DeviceDetailsScreenState extends State<DeviceDetailsScreen> {
           _batteryStatus = batteryStatus;
           _deviceId = deviceId;
           _currentFirmwareVersion = currentVersion;
+          _hardwareVersion = hardwareVersion;
           _isFetchingData = false;
         });
       }
 
-      // ✅ 5. Start ANT+ Device Search After Everything is Done
+      // ✅ 7. Start ANT+ Device Search After Everything is Done
       _startAntSearch();
 
-      // ✅ 6. Check for firmware updates in background
+      // ✅ 8. Check for firmware updates in background
       _checkForUpdates();
     } catch (e) {
       log.e("Error fetching device info: $e");
@@ -86,6 +110,7 @@ class _DeviceDetailsScreenState extends State<DeviceDetailsScreen> {
           _batteryStatus = "Unknown";
           _deviceId = "Unknown";
           _currentFirmwareVersion = "Unknown";
+          _hardwareVersion = "Unknown";
           _isFetchingData = false;
         });
       }
@@ -344,19 +369,6 @@ class _DeviceDetailsScreenState extends State<DeviceDetailsScreen> {
     }
   }
 
-  @override
-  void dispose() {
-    if (!_isUpdatingFirmware) {
-      _firmwareUpdateProgressSubscription?.cancel();
-      log.i("Stopping ANT+ search before closing BLE connection...");
-      
-      // Stop ANT+ search and disconnect BLE in a fire-and-forget manner
-      _cleanupConnections();
-    }
-    
-    super.dispose(); // Call super.dispose() immediately
-  }
-
   // Separate method to handle the async cleanup
   Future<void> _cleanupConnections() async {
     try {
@@ -531,6 +543,21 @@ class _DeviceDetailsScreenState extends State<DeviceDetailsScreen> {
     }
   }
 
+  /// Start RSSI updates for the BLE device
+  void _startRssiUpdates() {
+    _rssiSubscription = Stream.periodic(const Duration(seconds: 2))
+      .asyncMap((_) => widget.device.readRssi())
+      .listen((rssi) {
+        if (mounted) {
+          setState(() {
+            _bleRssi = rssi;
+          });
+        }
+      }, onError: (e) {
+        log.e("Error reading RSSI: $e");
+      });
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -599,9 +626,10 @@ class _DeviceDetailsScreenState extends State<DeviceDetailsScreen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text("🔋 Battery: $_batteryStatus", style: const TextStyle(fontSize: 18)),
-                      Text("📶 Signal Strength: ${_antDevices.isNotEmpty ? _antDevices.first['rssi'] : 'N/A'} dBm", style: const TextStyle(fontSize: 18)),
+                      Text("📶 Signal Strength: $_bleRssi dBm", style: const TextStyle(fontSize: 18)),
                       Text("🔢 Current Device ID: $_deviceId", style: const TextStyle(fontSize: 18)),
                       Text("📱 Firmware Version: $_currentFirmwareVersion", style: const TextStyle(fontSize: 18)),
+                      Text("🖥 Hardware Version: $_hardwareVersion", style: const TextStyle(fontSize: 18)),
                       if (_isUpdatingFirmware) ...[
                         const SizedBox(height: 8),
                         LinearProgressIndicator(value: _updateProgress),
