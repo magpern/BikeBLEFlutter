@@ -17,9 +17,6 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
     if: ${{ !contains(github.event.head_commit.message, 'skip ci') && !contains(github.event.head_commit.message, 'skip release') }}
     steps:
       - name: Checkout code
@@ -80,11 +77,6 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      # Build and deploy website
-      - name: Setup Pages
-        if: startsWith(github.ref, 'refs/tags/')
-        uses: actions/configure-pages@v4
-        
       - name: Generate QR Code
         if: startsWith(github.ref, 'refs/tags/')
         run: |
@@ -105,8 +97,15 @@ jobs:
         uses: actions/upload-pages-artifact@v3
         with:
           path: docs
-          
+
+  deploy:
+    needs: build
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+    steps:
       - name: Deploy to GitHub Pages
-        if: startsWith(github.ref, 'refs/tags/')
         id: deployment
         uses: actions/deploy-pages@v4 
