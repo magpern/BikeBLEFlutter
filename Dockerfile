@@ -60,11 +60,16 @@ RUN flutter doctor
 
 # Configure build environment to use standard non-Windows paths
 ENV GRADLE_OPTS="-Dorg.gradle.project.buildDir=/app/build -Dfile.encoding=UTF-8 -Dorg.gradle.java.home.use.file.uri=true"
+ENV DOCKER_CONTAINER="true"
 
 # Create script to configure Gradle before building
 RUN echo '#!/bin/bash\n\
 # Create local.properties with the correct SDK path for Docker\n\
 echo "sdk.dir=/home/flutter/Android/Sdk" > android/local.properties\n\
+echo "flutter.sdk=/home/flutter/flutter" >> android/local.properties\n\
+\n\
+# Set environment variables for path handling\n\
+export DOCKER_CONTAINER=true\n\
 \n\
 # Run the specified command\n\
 exec "$@"' > /home/flutter/docker-entrypoint.sh && \
