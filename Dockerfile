@@ -25,6 +25,7 @@ WORKDIR /home/flutter
 # Install Flutter
 RUN git clone https://github.com/flutter/flutter.git -b stable
 ENV PATH="/home/flutter/flutter/bin:${PATH}"
+ENV FLUTTER_ROOT="/home/flutter/flutter"
 
 # Install Android SDK
 RUN mkdir -p /home/flutter/Android/Sdk
@@ -53,13 +54,27 @@ RUN yes | sdkmanager --licenses \
 RUN flutter precache
 RUN flutter doctor
 
-# Fix for Windows path issue in Docker
+# Configure Gradle to handle Windows paths
 ENV FLUTTER_WINDOWS_PATH_FIX=true
+ENV FLUTTER_BUILD_DIR=/home/flutter/build
 
-# Switch back to root for cleanup
+# Create build directory
+RUN mkdir -p /home/flutter/build
+
+# Switch to root for script installation
 USER root
+
+# Create a script to fix Windows paths in Gradle files
+COPY fix_paths.sh /home/flutter/fix_paths.sh
+RUN chown flutter:flutter /home/flutter/fix_paths.sh && \
+    chmod +x /home/flutter/fix_paths.sh
+
+# Cleanup
 RUN apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
 # Switch back to flutter user
-USER flutter 
+USER flutter
+
+# Set the entrypoint to fix paths before running commands
+ENTRYPOINT ["/home/flutter/fix_paths.sh"] 
