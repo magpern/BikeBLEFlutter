@@ -9,7 +9,7 @@ document.addEventListener('DOMContentLoaded', function() {
 async function fetchLatestRelease() {
     try {
         // GitHub API endpoint for the latest release
-        const apiUrl = 'https://api.github.com/repos/magpern/Bike2FTMS/releases/latest';
+        const apiUrl = 'https://api.github.com/repos/magpern/BikeBLEFlutter/releases/latest';
         
         // Fetch data from GitHub API
         const response = await fetch(apiUrl);
