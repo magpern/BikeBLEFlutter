@@ -31,6 +31,16 @@ async function fetchLatestRelease() {
                 downloadLink.href = apkAsset.browser_download_url;
             }
         }
+
+        // Show QR code if it exists
+        const qrCodeImg = document.querySelector('#qr-code img');
+        if (qrCodeImg) {
+            qrCodeImg.style.display = 'block';
+            const qrText = document.querySelector('#qr-code .qr-text');
+            if (qrText) {
+                qrText.style.display = 'none';
+            }
+        }
     } catch (error) {
         console.error('Error fetching release info:', error);
         document.getElementById('version-number').textContent = 'Error loading version';
