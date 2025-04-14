@@ -18,26 +18,18 @@ jobs:
   build:
     runs-on: ubuntu-latest
     if: ${{ !contains(github.event.head_commit.message, 'skip ci') && !contains(github.event.head_commit.message, 'skip release') }}
-    # Using a container but with proper volume mounts
-    container:
-      image: ghcr.io/magpern/bikebleflutter:latest
-      options: --user root
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
           fetch-depth: 0  # Fetch all history for proper version derivation
 
-      - name: Fix permissions
+      - name: Pull and run Docker image
         run: |
-          # Fix permissions for GitHub Actions directories
-          mkdir -p /__w/_temp
-          chmod -R 777 /__w
-          # Create app directory with proper permissions
-          mkdir -p /app
-          chmod -R 777 /app
-          # Link current directory to /app
-          ln -sf $GITHUB_WORKSPACE /app/workspace
+          docker pull ghcr.io/magpern/bikebleflutter:latest
+          # Create a directory for the app
+          mkdir -p ${{ github.workspace }}/build
+          chmod -R 777 ${{ github.workspace }}
 
       - name: Derive version from Git
         id: version
@@ -57,14 +49,12 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-pub-
 
-      - name: Get dependencies
-        run: flutter pub get
-
-      - name: Build release APK 
-        run: flutter build apk --release
-
-      - name: Rename APK
+      - name: Build APK with Docker
         run: |
+          docker run --rm -v ${{ github.workspace }}:/app ghcr.io/magpern/bikebleflutter:latest \
+            sh -c "cd /app && flutter pub get && flutter build apk --release"
+          
+          # Create releases directory and copy APK
           mkdir -p releases
           cp build/app/outputs/flutter-apk/app-release.apk releases/BikeBLE_Config-${{ steps.version.outputs.version }}.apk
       
