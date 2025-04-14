@@ -18,12 +18,26 @@ allprojects {
     }
 }
 
-// Use the default build directory structure
-rootProject.buildDir = '../build'
+// Use a relative build directory structure with normalized file paths
+rootProject.buildDir = file('../build')
 subprojects {
-    project.buildDir = "${rootProject.buildDir}/${project.name}"
+    project.buildDir = new File(rootProject.buildDir, project.name)
+    
+    // Ensure paths are normalized across all platforms
+    tasks.withType(JavaCompile) {
+        options.fork = true
+    }
+}
+
+// Add this to fix path issues with Windows paths
+gradle.projectsEvaluated {
+    rootProject.allprojects { project ->
+        project.tasks.withType(JavaCompile) { task ->
+            task.options.fork = true
+        }
+    }
 }
 
 tasks.register("clean", Delete) {
     delete rootProject.buildDir
-} 
+}

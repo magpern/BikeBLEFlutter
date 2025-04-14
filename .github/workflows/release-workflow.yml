@@ -51,8 +51,13 @@ jobs:
 
       - name: Build APK with Docker
         run: |
-          docker run --rm -v ${{ github.workspace }}:/app ghcr.io/magpern/bikebleflutter:latest \
-            sh -c "cd /app && flutter pub get && flutter build apk --release"
+          # Add custom gradle properties for proper path handling
+          echo "org.gradle.java.home.use.file.uri=true" >> android/gradle.properties
+          echo "org.gradle.native.file.normalization=true" >> android/gradle.properties
+          
+          # Run the build in Docker
+          docker run --rm -v ${{ github.workspace }}:/app -w /app ghcr.io/magpern/bikebleflutter:latest \
+            sh -c "flutter pub get && flutter build apk --release"
           
           # Create releases directory and copy APK
           mkdir -p releases

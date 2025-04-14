@@ -58,29 +58,17 @@ RUN yes | sdkmanager --licenses \
 RUN flutter precache
 RUN flutter doctor
 
-# Configure build environment
-ENV FLUTTER_WINDOWS_PATH_FIX=true
+# Configure build environment to use standard non-Windows paths
+ENV GRADLE_OPTS="-Dorg.gradle.project.buildDir=/app/build -Dfile.encoding=UTF-8 -Dorg.gradle.java.home.use.file.uri=true"
 
-# Create build directory
-RUN mkdir -p /home/flutter/build
+# Create script to configure Gradle before building
+RUN echo '#!/bin/bash\n\
+# Create local.properties with the correct SDK path for Docker\n\
+echo "sdk.dir=/home/flutter/Android/Sdk" > android/local.properties\n\
+\n\
+# Run the specified command\n\
+exec "$@"' > /home/flutter/docker-entrypoint.sh && \
+chmod +x /home/flutter/docker-entrypoint.sh
 
-# Switch to root for script installation
-USER root
-
-# Create a script to fix Windows paths in Gradle files
-COPY fix_paths.sh /home/flutter/fix_paths.sh
-RUN chown flutter:flutter /home/flutter/fix_paths.sh && \
-    chmod +x /home/flutter/fix_paths.sh
-
-# Add additional tools needed for path fixing
-RUN apt-get update && apt-get install -y \
-    dos2unix \
-    file \
-    && apt-get clean && \
-    rm -rf /var/lib/apt/lists/*
-
-# Switch back to flutter user
-USER flutter
-
-# Set the entrypoint to fix paths before running commands
-ENTRYPOINT ["/home/flutter/fix_paths.sh"] 
+# Set the entrypoint script
+ENTRYPOINT ["/home/flutter/docker-entrypoint.sh"] 
