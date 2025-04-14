@@ -1,12 +1,14 @@
 name: Build and Push Docker Image
 
+# This workflow should only be run manually when we need to update the build environment
+# It builds and pushes a Docker image with all necessary dependencies for Flutter Android builds
 on:
   workflow_dispatch:
-  push:
-    branches: [ main ]
-    paths:
-      - 'Dockerfile'
-      - '.github/workflows/docker-build.yml'
+    inputs:
+      reason:
+        description: 'Reason for building the image'
+        required: true
+        default: 'Update build environment'
 
 jobs:
   build-and-push:
@@ -26,16 +28,11 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Extract metadata for Docker
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ghcr.io/${{ github.repository }}
-
       - name: Build and push Docker image
         uses: docker/build-push-action@v5
         with:
           context: .
           push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }} 
+          tags: ghcr.io/magpern/bikebleflutter:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max 

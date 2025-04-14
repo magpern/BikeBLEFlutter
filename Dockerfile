@@ -40,11 +40,21 @@ RUN wget -q https://dl.google.com/android/repository/commandlinetools-linux-9477
 
 # Accept licenses and install Android SDK components
 RUN yes | sdkmanager --licenses \
-    && sdkmanager "platform-tools" "platforms;android-33" "build-tools;33.0.2" "ndk;27.0.12077973"
+    && sdkmanager \
+        "platform-tools" \
+        "platforms;android-33" \
+        "platforms;android-34" \
+        "platforms;android-35" \
+        "build-tools;33.0.2" \
+        "build-tools;34.0.0" \
+        "ndk;27.0.12077973"
 
 # Pre-download Flutter dependencies
 RUN flutter precache
 RUN flutter doctor
+
+# Fix for Windows path issue in Docker
+ENV FLUTTER_WINDOWS_PATH_FIX=true
 
 # Switch back to root for cleanup
 USER root
