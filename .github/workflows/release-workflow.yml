@@ -82,15 +82,25 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y qrencode
-          DOWNLOAD_URL="https://github.com/magpern/Bike2FTMS/releases/latest/download/BikeBLE_Config-${{ steps.version.outputs.version }}.apk"
+          # Get the tag name without 'v' prefix
+          TAG=$(echo ${{ github.ref }} | sed 's/refs\/tags\///' | sed 's/^v//')
+          DOWNLOAD_URL="https://github.com/magpern/BikeBLEFlutter/releases/latest/download/BikeBLE_Config-${{ steps.version.outputs.version }}.apk"
           qrencode -o docs/qrcode.png -s 10 "$DOWNLOAD_URL"
+          # Verify QR code was generated
+          ls -la docs/qrcode.png
+          echo "QR code generated for URL: $DOWNLOAD_URL"
           
       - name: Update QR code in HTML
         if: startsWith(github.ref, 'refs/tags/')
         run: |
-          sed -i 's|<div class="qr-placeholder" id="qr-code">.*<div class="qr-text">QR Code</div>.*</div>|<div class="qr-placeholder" id="qr-code"><img src="qrcode.png" alt="QR Code for App Download"></div>|g' docs/index.html
-          # Update download link to APK instead of AAB
-          sed -i 's|BikeBLE_Config.apk|BikeBLE_Config-${{ steps.version.outputs.version }}.apk|g' docs/index.html
+          # Get the tag name without 'v' prefix
+          TAG=$(echo ${{ github.ref }} | sed 's/refs\/tags\///' | sed 's/^v//')
+          # Update QR code placeholder - using a more precise sed pattern
+          sed -i 's|<div class="qr-placeholder" id="qr-code">.*</div>|<div class="qr-placeholder" id="qr-code"><img src="qrcode.png" alt="QR Code for App Download"></div>|g' docs/index.html
+          # Update download link
+          sed -i "s|https://github.com/magpern/Bike2FTMS/releases/latest/download/BikeBLE_Config-.*.apk|https://github.com/magpern/BikeBLEFlutter/releases/latest/download/BikeBLE_Config-${{ steps.version.outputs.version }}.apk|g" docs/index.html
+          # Update version number
+          sed -i "s|<span id=\"version-number\">.*</span>|<span id=\"version-number\">$TAG</span>|g" docs/index.html
           
       - name: Commit and push docs changes
         if: startsWith(github.ref, 'refs/tags/')
