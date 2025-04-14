@@ -19,6 +19,10 @@ RUN apt-get update && apt-get install -y \
 
 # Set up new user
 RUN useradd -ms /bin/bash flutter
+
+# Create build directories (as root)
+RUN mkdir -p /app && chown -R flutter:flutter /app
+
 USER flutter
 WORKDIR /home/flutter
 
@@ -54,9 +58,8 @@ RUN yes | sdkmanager --licenses \
 RUN flutter precache
 RUN flutter doctor
 
-# Configure Gradle to handle Windows paths
+# Configure build environment
 ENV FLUTTER_WINDOWS_PATH_FIX=true
-ENV FLUTTER_BUILD_DIR=/home/flutter/build
 
 # Create build directory
 RUN mkdir -p /home/flutter/build
@@ -69,8 +72,11 @@ COPY fix_paths.sh /home/flutter/fix_paths.sh
 RUN chown flutter:flutter /home/flutter/fix_paths.sh && \
     chmod +x /home/flutter/fix_paths.sh
 
-# Cleanup
-RUN apt-get clean && \
+# Add additional tools needed for path fixing
+RUN apt-get update && apt-get install -y \
+    dos2unix \
+    file \
+    && apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
 # Switch back to flutter user
