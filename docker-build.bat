@@ -13,14 +13,17 @@ if exist android\local.properties (
   copy /Y android\local.properties.docker android\local.properties
 )
 
-REM Run the Docker build
+REM Make the path-fixing script executable in Docker
+docker run --rm -v %cd%:/app -w /app --entrypoint /bin/bash ghcr.io/magpern/bikebleflutter:latest -c "chmod +x /app/fix-flutter-paths.sh"
+
+REM Run the Docker build using our path-fixing script
 docker run --rm ^
   -v %cd%:/app ^
   -w /app ^
   -e DOCKER_CONTAINER=true ^
   -e FLUTTER_WINDOWS_PATH_FIX=true ^
   ghcr.io/magpern/bikebleflutter:latest ^
-  flutter build apk --release
+  /app/fix-flutter-paths.sh build apk --release
 
 REM Restore the original local.properties
 if exist android\local.properties.backup (
@@ -35,5 +38,6 @@ echo Build completed.
 if exist build\app\outputs\flutter-apk\app-release.apk (
   echo APK created successfully at build\app\outputs\flutter-apk\app-release.apk
 ) else (
-  echo Failed to create APK. Check the build logs above.
+  echo ERROR: Build failed or APK not found
+  exit /b 1
 ) 
