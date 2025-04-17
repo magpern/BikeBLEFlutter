@@ -10,7 +10,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../utils/logger.dart';
 
 class UpdateService {
-  static const String _baseUrl = 'https://api.github.com/repos/magpern/Bike2FTMS/releases/latest';
+  static const String _baseUrl = 'https://api.github.com/repos/magpern/BikeBLEFlutter/releases/latest';
   
   /// Check for updates and return update info
   Future<Map<String, dynamic>> checkForUpdates(BuildContext context) async {

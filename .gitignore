@@ -92,3 +92,4 @@ test_outputs/
 *.class
 *.pyc
 .svn/
+keystore-base64.txt
