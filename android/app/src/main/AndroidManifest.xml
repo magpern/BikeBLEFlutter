@@ -66,6 +66,18 @@
                 android:resource="@xml/provider_paths"/>
         </provider>
         
+        <!-- APK installation receiver -->
+        <receiver
+            android:name="androidx.core.content.pm.ShortcutManagerCompat$ShareShortcutManager"
+            android:enabled="true"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.PACKAGE_ADDED" />
+                <action android:name="android.intent.action.PACKAGE_REPLACED" />
+                <data android:scheme="package" />
+            </intent-filter>
+        </receiver>
+        
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->
         <meta-data

@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:package_info_plus/package_info_plus.dart' show PackageInfo;
@@ -9,12 +10,21 @@ import 'package:open_file/open_file.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../utils/logger.dart';
 import 'package:device_info_plus/device_info_plus.dart';
+import 'package:flutter/foundation.dart';
 
 // A global navigator key to use for dialogs
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
 class UpdateService {
   static const String _baseUrl = 'https://api.github.com/repos/magpern/BikeBLEFlutter/releases/latest';
+  
+  // Callback for when an APK file is downloaded
+  Function(File)? _onApkDownloaded;
+  
+  /// Set a callback for when update APK is downloaded
+  void setPendingUpdateCallback(Function(File) callback) {
+    _onApkDownloaded = callback;
+  }
   
   /// Check for updates and return update info
   Future<Map<String, dynamic>> checkForUpdates(BuildContext context) async {
@@ -179,6 +189,8 @@ class UpdateService {
     // Use a flag to track if dialog is shown
     bool isProgressDialogShowing = false;
     BuildContext? dialogContext;
+    final progressController = StreamController<double>();
+    File? downloadedFile;
     
     try {
       bool permissionGranted = false;
@@ -195,6 +207,16 @@ class UpdateService {
           final storageStatus = await Permission.storage.request();
           permissionGranted = storageStatus.isGranted;
         }
+        
+        // Always need install permission for APK
+        final installStatus = await Permission.requestInstallPackages.request();
+        if (!installStatus.isGranted) {
+          log.e("Install permission denied");
+          if (navigatorKey.currentContext != null) {
+            _showErrorSnackBar(navigatorKey.currentContext!, "Permission to install packages is required for updates");
+          }
+          return;
+        }
       } else {
         // For non-Android platforms
         permissionGranted = true;
@@ -202,69 +224,70 @@ class UpdateService {
       
       if (!permissionGranted) {
         log.e("Storage permission denied");
-        _showErrorSnackBar(context, "Storage permission is required to download the update");
+        if (navigatorKey.currentContext != null) {
+          _showErrorSnackBar(navigatorKey.currentContext!, "Storage permission is required to download the update");
+        }
         return;
       }
       
-      // Show download progress dialog - using the navigator key for stability
+      // Show download progress dialog with progress indicator - always use navigator key
       if (navigatorKey.currentContext != null) {
-        dialogContext = navigatorKey.currentContext!;
         isProgressDialogShowing = true;
         showDialog(
-          context: dialogContext,
-          barrierDismissible: false,
-          builder: (BuildContext context) {
-            dialogContext = context;
-            return _buildProgressDialog(context);
-          },
-        );
-      } else {
-        // Fallback to provided context, but might be unstable
-        dialogContext = context;
-        isProgressDialogShowing = true;
-        showDialog(
-          context: context,
+          context: navigatorKey.currentContext!,
           barrierDismissible: false,
           builder: (BuildContext ctx) {
             dialogContext = ctx;
-            return _buildProgressDialog(ctx);
+            return _buildProgressDialog(ctx, progressController.stream);
           },
         );
+      } else {
+        log.e("No valid context found for showing progress dialog");
+        return;
       }
       
       // Get temporary directory
       final directory = await getExternalStorageDirectory() ?? await getTemporaryDirectory();
       final filePath = '${directory.path}/update.apk';
+      log.i("Downloading APK to: $filePath");
       
-      // Download the file
-      final response = await http.get(
-        Uri.parse(downloadUrl),
-        headers: {"Accept": "application/octet-stream"},
-      );
-      
-      // Save the file
-      final file = File(filePath);
-      await file.writeAsBytes(response.bodyBytes);
-      
-      // Close progress dialog if it's showing
-      if (isProgressDialogShowing && dialogContext != null) {
-        try {
-          Navigator.of(dialogContext!, rootNavigator: true).pop();
-          isProgressDialogShowing = false;
-        } catch (e) {
-          log.e("Error closing dialog: $e");
-          // Dialog may have been closed already, ignore
-        }
+      // Create output file
+      downloadedFile = File(filePath);
+      if (await downloadedFile.exists()) {
+        await downloadedFile.delete();
       }
       
-      // Check if Android Package Installer is available
-      if (Platform.isAndroid) {
-        // Open the APK file to install
-        final result = await OpenFile.open(filePath);
-        if (result.type != ResultType.done) {
-          // If couldn't open directly, try launching the URL
-          _launchUrl(downloadUrl);
+      // Download with progress tracking
+      final httpClient = http.Client();
+      final request = http.Request('GET', Uri.parse(downloadUrl));
+      final response = await httpClient.send(request);
+      
+      final totalBytes = response.contentLength ?? 0;
+      int receivedBytes = 0;
+      
+      final fileStream = downloadedFile.openWrite();
+      
+      await response.stream.forEach((chunk) {
+        receivedBytes += chunk.length;
+        fileStream.add(chunk);
+        if (totalBytes > 0) {
+          final progress = receivedBytes / totalBytes;
+          progressController.add(progress);
         }
+      });
+      
+      await fileStream.flush();
+      await fileStream.close();
+      
+      // Close progress dialog if it's showing
+      _closeProgressDialog(dialogContext);
+      isProgressDialogShowing = false;
+      
+      if (Platform.isAndroid) {
+        log.i("Attempting to install APK: $filePath");
+        
+        // Try to install APK
+        await _installApk(downloadedFile);
       } else {
         // For other platforms, just launch the download URL
         _launchUrl(downloadUrl);
@@ -273,18 +296,79 @@ class UpdateService {
       log.e("Error downloading update: $e");
       
       // Close progress dialog if it's showing
-      if (isProgressDialogShowing && dialogContext != null) {
-        try {
-          Navigator.of(dialogContext!, rootNavigator: true).pop();
-        } catch (e) {
-          log.e("Error closing dialog: $e");
-          // Dialog may have been closed already, ignore
-        }
+      _closeProgressDialog(dialogContext);
+      
+      // Show error if a valid context is available
+      if (navigatorKey.currentContext != null) {
+        _showErrorSnackBar(navigatorKey.currentContext!, "Failed to download update: $e");
+      }
+    } finally {
+      await progressController.close();
+    }
+  }
+  
+  /// Close progress dialog safely
+  void _closeProgressDialog(BuildContext? dialogContext) {
+    if (dialogContext != null) {
+      try {
+        Navigator.of(dialogContext, rootNavigator: true).pop();
+      } catch (e) {
+        log.e("Error closing dialog: $e");
+        // Dialog may have been closed already, ignore
+      }
+    }
+  }
+  
+  /// Install APK file
+  Future<void> _installApk(File apkFile) async {
+    try {
+      if (!await apkFile.exists()) {
+        log.e("APK file doesn't exist at ${apkFile.path}");
+        return;
       }
       
-      // Show error if context is still valid
-      if (context.mounted) {
-        _showErrorSnackBar(context, "Failed to download update: $e");
+      // Notify callback about the downloaded APK file
+      if (_onApkDownloaded != null) {
+        _onApkDownloaded!(apkFile);
+      }
+      
+      // Method 1: Use OpenFile plugin (most reliable)
+      final result = await OpenFile.open(apkFile.path);
+      if (result.type != ResultType.done) {
+        log.e("Failed to install APK using OpenFile: ${result.message}");
+        
+        // If OpenFile fails, try other methods
+        if (navigatorKey.currentContext != null) {
+          // Show a dialog asking user to install manually
+          showDialog(
+            context: navigatorKey.currentContext!,
+            builder: (context) => AlertDialog(
+              title: const Text("Manual Installation Required"),
+              content: const Text(
+                "The automatic installation couldn't be completed. Would you like to install the update manually?"
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text("Cancel"),
+                ),
+                ElevatedButton(
+                  onPressed: () {
+                    Navigator.pop(context);
+                    _launchUrl("content://${apkFile.path}");
+                  },
+                  child: const Text("Install Manually"),
+                ),
+              ],
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      log.e("Error installing APK: $e");
+      // If all else fails, at least log the error
+      if (navigatorKey.currentContext != null) {
+        _showErrorSnackBar(navigatorKey.currentContext!, "Failed to install update: $e");
       }
     }
   }
@@ -297,15 +381,30 @@ class UpdateService {
   }
   
   /// Build a progress dialog for showing download progress
-  Widget _buildProgressDialog(BuildContext context) {
+  Widget _buildProgressDialog(BuildContext context, [Stream<double>? progressStream]) {
     return AlertDialog(
       title: const Text('Downloading Update'),
       content: Column(
         mainAxisSize: MainAxisSize.min,
-        children: const [
-          CircularProgressIndicator(),
-          SizedBox(height: 16),
-          Text('Please wait while the update is downloaded...'),
+        children: [
+          if (progressStream != null)
+            StreamBuilder<double>(
+              stream: progressStream,
+              builder: (context, snapshot) {
+                final progress = snapshot.data ?? 0.0;
+                return Column(
+                  children: [
+                    LinearProgressIndicator(value: progress),
+                    const SizedBox(height: 8),
+                    Text('${(progress * 100).toStringAsFixed(0)}%'),
+                  ],
+                );
+              },
+            )
+          else
+            const CircularProgressIndicator(),
+          const SizedBox(height: 16),
+          const Text('Please wait while the update is downloaded...'),
         ],
       ),
     );
