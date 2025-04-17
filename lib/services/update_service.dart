@@ -34,6 +34,10 @@ class UpdateService {
       final currentVersion = packageInfo.version;
       log.i("Current app version: $currentVersion");
       
+      // Check if running in debug mode
+      final isDebugMode = kDebugMode || currentVersion.contains('debug');
+      log.i("Running in debug mode: $isDebugMode");
+      
       // Get latest release from GitHub
       final response = await http.get(Uri.parse(_baseUrl));
       if (response.statusCode != 200) {
@@ -61,8 +65,8 @@ class UpdateService {
         };
       }
       
-      // Compare versions
-      bool hasUpdate = _isNewerVersion(currentVersion, latestVersion);
+      // Compare versions, but always show update if in debug mode
+      final bool hasUpdate = isDebugMode ? true : _isNewerVersion(currentVersion, latestVersion);
       
       if (hasUpdate) {
         log.i("Update available: $latestVersion");
@@ -72,7 +76,8 @@ class UpdateService {
           'latestVersion': latestVersion,
           'releaseNotes': data['body'],
           'downloadUrl': apkAsset['browser_download_url'],
-          'publishedAt': data['published_at']
+          'publishedAt': data['published_at'],
+          'isDebugMode': isDebugMode
         };
       } else {
         log.i("App is up to date");
@@ -136,20 +141,38 @@ class UpdateService {
   
   /// Show update dialog to the user
   void showUpdateDialog(BuildContext context, Map<String, dynamic> updateInfo) {
+    final bool isDebugMode = updateInfo['isDebugMode'] ?? false;
+    
     showDialog(
       context: context,
       barrierDismissible: false,
       builder: (context) => AlertDialog(
-        title: const Text('Update Available'),
+        title: Text(isDebugMode ? 'Debug Update Available' : 'Update Available'),
         content: SingleChildScrollView(
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                'A new version (${updateInfo['latestVersion']}) is available.',
+                isDebugMode 
+                    ? 'You are running in debug mode (${updateInfo['currentVersion']}). New version: ${updateInfo['latestVersion']}'
+                    : 'A new version (${updateInfo['latestVersion']}) is available.',
                 style: const TextStyle(fontWeight: FontWeight.bold),
               ),
+              if (isDebugMode)
+                Container(
+                  margin: const EdgeInsets.only(top: 8),
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: Colors.yellow[100],
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: const Text(
+                    'Note: When installing a release version over a debug build, '
+                    'you may need to uninstall the app first due to signature differences.',
+                    style: TextStyle(fontSize: 12),
+                  ),
+                ),
               const SizedBox(height: 8),
               const Text('Release Notes:'),
               Container(
@@ -337,9 +360,81 @@ class UpdateService {
       if (result.type != ResultType.done) {
         log.e("Failed to install APK using OpenFile: ${result.message}");
         
-        // If OpenFile fails, try other methods
+        // Check for package conflict error (this appears in different languages)
+        final isPackageConflict = result.message.contains("conflict") || 
+                                 result.message.contains("konflikt") ||
+                                 result.message.contains("INSTALL_FAILED_UPDATE_INCOMPATIBLE");
+        
+        if (isPackageConflict && navigatorKey.currentContext != null) {
+          // Show a special dialog for package conflicts
+          showDialog(
+            context: navigatorKey.currentContext!,
+            builder: (context) => AlertDialog(
+              title: const Text("Installation Conflict"),
+              content: const Text(
+                "There is a signature conflict between the installed app and the update. "
+                "This typically happens when installing a release version over a debug version or vice versa.\n\n"
+                "Would you like to uninstall the current app and install the update?"
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text("Cancel"),
+                ),
+                ElevatedButton(
+                  onPressed: () async {
+                    Navigator.pop(context);
+                    // Get package info for uninstall
+                    final packageInfo = await PackageInfo.fromPlatform();
+                    final packageName = packageInfo.packageName;
+                    
+                    // Launch system uninstall intent
+                    final uninstallUri = Uri.parse('package:$packageName');
+                    if (await canLaunchUrl(uninstallUri)) {
+                      await launchUrl(
+                        uninstallUri,
+                        mode: LaunchMode.externalApplication,
+                      );
+                    }
+                    
+                    // After uninstall, we can show a dialog to install the APK
+                    if (navigatorKey.currentContext != null) {
+                      Future.delayed(const Duration(seconds: 2), () {
+                        if (navigatorKey.currentContext != null) {
+                          showDialog(
+                            context: navigatorKey.currentContext!,
+                            builder: (context) => AlertDialog(
+                              title: const Text("Install Update"),
+                              content: const Text("Now you can install the update. Would you like to proceed?"),
+                              actions: [
+                                TextButton(
+                                  onPressed: () => Navigator.pop(context),
+                                  child: const Text("Later"),
+                                ),
+                                ElevatedButton(
+                                  onPressed: () {
+                                    Navigator.pop(context);
+                                    OpenFile.open(apkFile.path);
+                                  },
+                                  child: const Text("Install Now"),
+                                ),
+                              ],
+                            ),
+                          );
+                        }
+                      });
+                    }
+                  },
+                  child: const Text("Uninstall & Update"),
+                ),
+              ],
+            ),
+          );
+          return;
+        }
+        
+        // If not a package conflict, show the regular manual install dialog
         if (navigatorKey.currentContext != null) {
-          // Show a dialog asking user to install manually
           showDialog(
             context: navigatorKey.currentContext!,
             builder: (context) => AlertDialog(
