@@ -13,6 +13,7 @@ class MyApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'BLE Scanner',
+      navigatorKey: navigatorKey, // Use the navigator key from update_service.dart
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.blue),
         useMaterial3: true, // ✅ Use the latest Material Design 3 UI

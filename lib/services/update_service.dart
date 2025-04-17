@@ -8,6 +8,10 @@ import 'package:permission_handler/permission_handler.dart';
 import 'package:open_file/open_file.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../utils/logger.dart';
+import 'package:device_info_plus/device_info_plus.dart';
+
+// A global navigator key to use for dialogs
+final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
 class UpdateService {
   static const String _baseUrl = 'https://api.github.com/repos/magpern/BikeBLEFlutter/releases/latest';
@@ -172,21 +176,61 @@ class UpdateService {
   
   /// Download and install the update
   Future<void> _downloadAndInstallUpdate(BuildContext context, String downloadUrl) async {
+    // Use a flag to track if dialog is shown
+    bool isProgressDialogShowing = false;
+    BuildContext? dialogContext;
+    
     try {
-      // Request storage permission (needed for Android < 13)
-      final status = await Permission.storage.request();
-      if (!status.isGranted) {
+      bool permissionGranted = false;
+      
+      // Check Android version and request appropriate permissions
+      if (Platform.isAndroid) {
+        // For Android 13+ (API level 33+)
+        if (await _isAndroid13OrHigher()) {
+          // Request the new storage permissions introduced in Android 13
+          final storageStatus = await Permission.photos.request();
+          permissionGranted = storageStatus.isGranted;
+        } else {
+          // For Android 12 and below
+          final storageStatus = await Permission.storage.request();
+          permissionGranted = storageStatus.isGranted;
+        }
+      } else {
+        // For non-Android platforms
+        permissionGranted = true;
+      }
+      
+      if (!permissionGranted) {
         log.e("Storage permission denied");
         _showErrorSnackBar(context, "Storage permission is required to download the update");
         return;
       }
       
-      // Show download progress dialog
-      showDialog(
-        context: context,
-        barrierDismissible: false,
-        builder: (context) => _buildProgressDialog(context),
-      );
+      // Show download progress dialog - using the navigator key for stability
+      if (navigatorKey.currentContext != null) {
+        dialogContext = navigatorKey.currentContext!;
+        isProgressDialogShowing = true;
+        showDialog(
+          context: dialogContext,
+          barrierDismissible: false,
+          builder: (BuildContext context) {
+            dialogContext = context;
+            return _buildProgressDialog(context);
+          },
+        );
+      } else {
+        // Fallback to provided context, but might be unstable
+        dialogContext = context;
+        isProgressDialogShowing = true;
+        showDialog(
+          context: context,
+          barrierDismissible: false,
+          builder: (BuildContext ctx) {
+            dialogContext = ctx;
+            return _buildProgressDialog(ctx);
+          },
+        );
+      }
       
       // Get temporary directory
       final directory = await getExternalStorageDirectory() ?? await getTemporaryDirectory();
@@ -202,8 +246,16 @@ class UpdateService {
       final file = File(filePath);
       await file.writeAsBytes(response.bodyBytes);
       
-      // Close progress dialog
-      Navigator.of(context, rootNavigator: true).pop();
+      // Close progress dialog if it's showing
+      if (isProgressDialogShowing && dialogContext != null) {
+        try {
+          Navigator.of(dialogContext!, rootNavigator: true).pop();
+          isProgressDialogShowing = false;
+        } catch (e) {
+          log.e("Error closing dialog: $e");
+          // Dialog may have been closed already, ignore
+        }
+      }
       
       // Check if Android Package Installer is available
       if (Platform.isAndroid) {
@@ -219,8 +271,21 @@ class UpdateService {
       }
     } catch (e) {
       log.e("Error downloading update: $e");
-      Navigator.of(context, rootNavigator: true).pop(); // Close progress dialog if open
-      _showErrorSnackBar(context, "Failed to download update: $e");
+      
+      // Close progress dialog if it's showing
+      if (isProgressDialogShowing && dialogContext != null) {
+        try {
+          Navigator.of(dialogContext!, rootNavigator: true).pop();
+        } catch (e) {
+          log.e("Error closing dialog: $e");
+          // Dialog may have been closed already, ignore
+        }
+      }
+      
+      // Show error if context is still valid
+      if (context.mounted) {
+        _showErrorSnackBar(context, "Failed to download update: $e");
+      }
     }
   }
   
@@ -251,5 +316,14 @@ class UpdateService {
     if (!await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication)) {
       log.e('Could not launch $url');
     }
+  }
+  
+  /// Check if device is running Android 13 or higher
+  Future<bool> _isAndroid13OrHigher() async {
+    if (Platform.isAndroid) {
+      final androidInfo = await DeviceInfoPlugin().androidInfo;
+      return androidInfo.version.sdkInt >= 33; // Android 13 is API level 33
+    }
+    return false;
   }
 } 

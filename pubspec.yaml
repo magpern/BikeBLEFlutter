@@ -45,6 +45,7 @@ dependencies:
   package_info_plus: ^6.0.0
   open_file: ^3.5.4
   url_launcher: ^6.2.5
+  device_info_plus: ^9.1.2
 
 dev_dependencies:
   flutter_test:
