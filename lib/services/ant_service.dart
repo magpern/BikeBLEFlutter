@@ -4,6 +4,31 @@ import 'github_service.dart';
 import 'dfu_service.dart';
 import 'package:logger/logger.dart';
 
+enum DataSourceType {
+  antDevice(0),
+  keiserM3i(1);
+
+  final int value;
+  const DataSourceType(this.value);
+
+  static DataSourceType fromValue(int value) {
+    return DataSourceType.values.firstWhere(
+      (type) => type.value == value,
+      orElse: () => DataSourceType.antDevice,
+    );
+  }
+
+  @override
+  String toString() {
+    switch (this) {
+      case DataSourceType.antDevice:
+        return 'ANT+ Device';
+      case DataSourceType.keiserM3i:
+        return 'Keiser M3i';
+    }
+  }
+}
+
 class AntService {
   final GitHubService _githubService = GitHubService();
   final DfuService _dfuService = DfuService();
@@ -77,20 +102,52 @@ class AntService {
       final response = await characteristic.read();
       if (response.length < 3) {
         log.w("Invalid response length: ${response.length}");
-        return {"deviceId": "Unknown", "deviceName": "Unknown Device"};
+        return {
+          "deviceId": "Unknown", 
+          "deviceName": "Unknown Device",
+          "dataSourceType": DataSourceType.antDevice,
+          "macAddress": "Unknown"
+        };
       }
 
+      // Parse Device ID (2 bytes)
       int deviceIdValue = response[0] | (response[1] << 8);
+      
+      // Parse Name Length and Name
       int nameLength = response[2];
       String deviceName = response.length >= (3 + nameLength)
           ? String.fromCharCodes(response.sublist(3, 3 + nameLength))
           : "Unknown Device";
 
-      log.i("Device Info - ID: $deviceIdValue, Name: $deviceName");
-      return {"deviceId": deviceIdValue.toString(), "deviceName": deviceName};
+      // Parse Data Source Type (1 byte)
+      int dataSourceTypeOffset = 3 + nameLength;
+      DataSourceType dataSourceType = response.length > dataSourceTypeOffset 
+          ? DataSourceType.fromValue(response[dataSourceTypeOffset])
+          : DataSourceType.antDevice;
+
+      // Parse MAC Address (6 bytes)
+      int macOffset = dataSourceTypeOffset + 1;
+      String macAddress = "Unknown";
+      if (response.length >= macOffset + 6) {
+        List<int> macBytes = response.sublist(macOffset, macOffset + 6);
+        macAddress = macBytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join(':');
+      }
+
+      log.i("Device Info - ID: $deviceIdValue, Name: $deviceName, Data Source: ${dataSourceType.toString()}, MAC: $macAddress");
+      return {
+        "deviceId": deviceIdValue.toString(),
+        "deviceName": deviceName,
+        "dataSourceType": dataSourceType,
+        "macAddress": macAddress
+      };
     } catch (e) {
       log.e("Failed to read Device ID & Name: $e");
-      return {"deviceId": "Unknown", "deviceName": "Unknown Device"};
+      return {
+        "deviceId": "Unknown", 
+        "deviceName": "Unknown Device",
+        "dataSourceType": DataSourceType.antDevice,
+        "macAddress": "Unknown"
+      };
     }
   }
 
