@@ -61,6 +61,8 @@ class GitHubService {
   /// Fetch latest release information from GitHub
   Future<Map<String, dynamic>> getLatestRelease({String? hardwareVersion}) async {
     try {
+      log.i("Fetching latest release, hardware version: ${hardwareVersion ?? 'not specified'}");
+      
       final response = await http.get(
         Uri.parse('$_baseUrl/repos/$_repoOwner/$_repoName/releases/latest'),
       );
@@ -68,9 +70,16 @@ class GitHubService {
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
         final version = data['tag_name'] as String;
+        log.i("Found latest release: $version");
         
         // Find the zip asset matching the hardware version if specified
         final assets = data['assets'] as List;
+        log.i("Found ${assets.length} assets in release");
+        
+        // Log all available assets for debugging
+        for (var asset in assets) {
+          log.d("Available asset: ${asset['name']}");
+        }
         
         Map<String, dynamic>? matchingAsset;
         
@@ -79,34 +88,67 @@ class GitHubService {
           String hardwareId = "";
           final revPrefix = "Rev_";
           if (hardwareVersion.startsWith(revPrefix)) {
-            hardwareId = hardwareVersion.substring(revPrefix.length);
+            hardwareId = hardwareVersion.substring(revPrefix.length).toLowerCase();
+            log.i("Extracted hardware ID: $hardwareId from $hardwareVersion");
+          } else {
+            hardwareId = hardwareVersion.toLowerCase();
+            log.i("Using hardware version as ID: $hardwareId");
           }
           
           if (hardwareId.isNotEmpty) {
-            // Look for a specific asset with the hardware ID in its name
-            matchingAsset = assets.firstWhere(
-              (asset) => 
-                asset['name'].toString().contains(hardwareId) && 
-                asset['name'].toString().endsWith('.zip'),
-              orElse: () => null,
-            );
+            log.i("Looking for asset containing: $hardwareId");
+            // Look for a specific asset with the hardware ID in its name (case insensitive)
+            for (var asset in assets) {
+              final assetName = asset['name'].toString().toLowerCase();
+              if (assetName.contains(hardwareId) && assetName.endsWith('.zip')) {
+                matchingAsset = asset;
+                log.i("✅ Found matching asset: ${asset['name']}");
+                break;
+              }
+            }
+            
+            if (matchingAsset == null) {
+              log.w("❌ No matching asset found for hardware ID: $hardwareId");
+              return {
+                'version': version,
+                'downloadUrl': null,
+                'success': false,
+                'error': 'No firmware found for hardware: $hardwareVersion',
+              };
+            }
+          }
+        } else {
+          // If no hardware version specified, fall back to the first zip asset
+          log.i("No hardware version specified, looking for any ZIP asset");
+          for (var asset in assets) {
+            if (asset['name'].toString().toLowerCase().endsWith('.zip')) {
+              matchingAsset = asset;
+              log.i("Using generic asset: ${asset['name']}");
+              break;
+            }
           }
         }
         
         // If no hardware-specific asset found or no hardware version specified,
-        // fall back to the first zip asset
-        matchingAsset ??= assets.firstWhere(
-          (asset) => asset['name'].toString().endsWith('.zip'),
-          orElse: () => null,
-        );
-
-        if (matchingAsset != null) {
+        // NO LONGER falling back to the first zip asset
+        if (matchingAsset == null) {
+          log.e("No suitable firmware ZIP found in the release");
           return {
             'version': version,
-            'downloadUrl': matchingAsset['browser_download_url'] as String,
-            'success': true,
+            'downloadUrl': null,
+            'success': false,
+            'error': 'No firmware ZIP found in this release',
           };
         }
+
+        // At this point matchingAsset is guaranteed to be non-null
+        log.i("Selected asset for download: ${matchingAsset['name']}");
+        return {
+          'version': version,
+          'downloadUrl': matchingAsset['browser_download_url'] as String,
+          'assetName': matchingAsset['name'],
+          'success': true,
+        };
       }
 
       return {

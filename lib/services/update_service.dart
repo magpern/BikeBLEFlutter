@@ -209,8 +209,7 @@ class UpdateService {
   
   /// Download and install the update
   Future<void> _downloadAndInstallUpdate(BuildContext context, String downloadUrl) async {
-    // Use a flag to track if dialog is shown
-    bool isProgressDialogShowing = false;
+    // Use a dialog context to track the dialog
     BuildContext? dialogContext;
     final progressController = StreamController<double>();
     File? downloadedFile;
@@ -255,7 +254,6 @@ class UpdateService {
       
       // Show download progress dialog with progress indicator - always use navigator key
       if (navigatorKey.currentContext != null) {
-        isProgressDialogShowing = true;
         showDialog(
           context: navigatorKey.currentContext!,
           barrierDismissible: false,
@@ -304,7 +302,6 @@ class UpdateService {
       
       // Close progress dialog if it's showing
       _closeProgressDialog(dialogContext);
-      isProgressDialogShowing = false;
       
       if (Platform.isAndroid) {
         log.i("Attempting to install APK: $filePath");
