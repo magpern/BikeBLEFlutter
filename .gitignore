@@ -93,3 +93,4 @@ test_outputs/
 *.pyc
 .svn/
 keystore-base64.txt
+keystore_base64.txt

@@ -24,6 +24,18 @@ jobs:
         with:
           fetch-depth: 0  # Fetch all history for proper version derivation
 
+      - name: Set up release signing
+        run: |
+          # Decode the keystore from base64
+          echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 -d > android/app/bikeble_release.keystore
+          # Create key.properties file
+          cat > android/key.properties << EOL
+          storeFile=bikeble_release.keystore
+          storePassword=${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          keyAlias=${{ secrets.ANDROID_KEY_ALIAS }}
+          keyPassword=${{ secrets.ANDROID_KEY_PASSWORD }}
+          EOL
+
       - name: Pull and run Docker image
         run: |
           docker pull ghcr.io/magpern/bikebleflutter:latest
