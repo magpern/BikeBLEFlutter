@@ -5,7 +5,8 @@ import '../utils/logger.dart';
 class GitHubService {
   static const String _baseUrl = 'https://api.github.com';
   static const String _repoOwner = 'magpern';
-  static const String _repoName = 'Bike2FTMS';
+  static const String _repoName = 'BikeBLEFlutter';
+  static const String _firmwareRepoName = 'Bike2FTMS';
 
   /// Compare two version strings
   /// Returns true if version2 is newer than version1
@@ -63,8 +64,12 @@ class GitHubService {
     try {
       log.i("Fetching latest release, hardware version: ${hardwareVersion ?? 'not specified'}");
       
+      // Use firmware repo for hardware updates, app repo for app updates
+      final repoName = hardwareVersion != null ? _firmwareRepoName : _repoName;
+      log.i("Using repository: $repoName for ${hardwareVersion != null ? 'firmware' : 'app'} update");
+      
       final response = await http.get(
-        Uri.parse('$_baseUrl/repos/$_repoOwner/$_repoName/releases/latest'),
+        Uri.parse('$_baseUrl/repos/$_repoOwner/$repoName/releases/latest'),
       );
 
       if (response.statusCode == 200) {
