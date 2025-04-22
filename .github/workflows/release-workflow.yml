@@ -50,9 +50,11 @@ jobs:
         run: |
           # Extract version number without any suffix
           BASE_VERSION=$(echo ${{ steps.version.outputs.version }} | cut -d'-' -f1)
+          # Calculate version code (major*10000 + minor*100 + patch)
+          VERSION_CODE=$(echo "$BASE_VERSION" | awk -F. '{ printf("%d%02d%02d\n", $1,$2,$3) }')
           # Update version in pubspec.yaml
-          sed -i "s/^version: .*/version: $BASE_VERSION+1/" pubspec.yaml
-          echo "Updated pubspec.yaml version to $BASE_VERSION+1"
+          sed -i "s/^version: .*/version: $BASE_VERSION+${VERSION_CODE}/" pubspec.yaml
+          echo "Updated pubspec.yaml version to $BASE_VERSION+${VERSION_CODE}"
 
       - name: Cache Flutter dependencies
         uses: actions/cache@v4
