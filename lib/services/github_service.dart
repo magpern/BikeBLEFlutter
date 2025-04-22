@@ -33,26 +33,24 @@ class GitHubService {
         if (v2[i] < v1[i]) return false;
       }
 
-      // If base versions are equal, compare suffixes
-      if (v1Parts.length > 1 && v2Parts.length > 1) {
-        final v1Suffix = v1Parts[1];
-        final v2Suffix = v2Parts[1];
-        
-        // If one is snapshot and other is sha, consider sha as newer
-        if (v1Suffix == 'snapshot' && v2Suffix != 'snapshot') return true;
-        if (v2Suffix == 'snapshot' && v1Suffix != 'snapshot') return false;
-        
-        // If both are sha numbers, compare them
-        if (v1Suffix != 'snapshot' && v2Suffix != 'snapshot') {
-          return v2Suffix.compareTo(v1Suffix) > 0;
-        }
+      // If base versions are equal, handle suffixes
+      if (v1Parts.length == 1 && v2Parts.length == 1) {
+        // Both are release versions, they are equal
+        return false;
       }
       
-      // If one has suffix and other doesn't, consider the one with suffix as newer
-      if (v1Parts.length > 1 && v2Parts.length == 1) return true;
-      if (v2Parts.length > 1 && v1Parts.length == 1) return false;
+      // If one is a release version (no suffix) and other has suffix,
+      // consider the release version as newer
+      if (v1Parts.length == 1 && v2Parts.length > 1) return false;
+      if (v2Parts.length == 1 && v1Parts.length > 1) return true;
       
-      return false;
+      // If both have suffixes, consider snapshot as older than any other suffix
+      if (v1Parts[1] == 'snapshot' && v2Parts[1] != 'snapshot') return true;
+      if (v2Parts[1] == 'snapshot' && v1Parts[1] != 'snapshot') return false;
+      
+      // If both have non-snapshot suffixes (like SHA), compare them
+      return v2Parts[1].compareTo(v1Parts[1]) > 0;
+      
     } catch (e) {
       log.e('Version comparison error: $e');
       return false;

@@ -34,11 +34,25 @@ jobs:
       - name: Derive version from Git
         id: version
         run: |
-          TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
+          TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "0.0.0")
           SHA=$(git rev-parse --short HEAD)
-          VERSION="${TAG#v}-${SHA}"
+          # If we're on a tag (release build), use just the tag version
+          if [ "$(git describe --exact-match --tags HEAD 2>/dev/null)" ]; then
+            VERSION="$TAG"
+          else
+            # For non-release builds, append snapshot
+            VERSION="$TAG-snapshot"
+          fi
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "Using version: $VERSION"
+
+      - name: Update pubspec.yaml version
+        run: |
+          # Extract version number without any suffix
+          BASE_VERSION=$(echo ${{ steps.version.outputs.version }} | cut -d'-' -f1)
+          # Update version in pubspec.yaml
+          sed -i "s/^version: .*/version: $BASE_VERSION+1/" pubspec.yaml
+          echo "Updated pubspec.yaml version to $BASE_VERSION+1"
 
       - name: Cache Flutter dependencies
         uses: actions/cache@v4
@@ -102,14 +116,14 @@ jobs:
           # Update version number
           sed -i "s|<span id=\"version-number\">.*</span>|<span id=\"version-number\">$TAG</span>|g" docs/index.html
           
-      - name: Commit and push docs changes
+      - name: Commit and push docs version changes
         if: startsWith(github.ref, 'refs/tags/')
         run: |
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
           # Create a new branch for the docs update
           git checkout -b docs-update-${{ steps.version.outputs.version }}
-          git add docs/qrcode.png docs/index.html
-          git commit -m "Update QR code and download link for release ${{ steps.version.outputs.version }}"
+          git add docs/qrcode.png docs/index.html pubspec.yaml
+          git commit -m "Update version to ${{ steps.version.outputs.version }} and docs for release"
           # Push to the main branch
           git push origin HEAD:main 
