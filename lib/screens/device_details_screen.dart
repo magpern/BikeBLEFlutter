@@ -43,6 +43,7 @@ class _DeviceDetailsScreenState extends State<DeviceDetailsScreen> {
   String _macAddress = "Unknown";
   StreamSubscription? _firmwareUpdateProgressSubscription;
   StreamSubscription? _keiserScanSubscription;
+  StreamSubscription? _antSearchSubscription;
   final _deviceNameRegex = RegExp(r'^[A-Za-z0-9]{1,8}$');
   StreamSubscription<int>? _rssiSubscription;
 
@@ -56,6 +57,7 @@ class _DeviceDetailsScreenState extends State<DeviceDetailsScreen> {
   void dispose() {
     _rssiSubscription?.cancel();
     _keiserScanSubscription?.cancel();
+    _antSearchSubscription?.cancel();
     if (!_isUpdatingFirmware) {
       _firmwareUpdateProgressSubscription?.cancel();
       log.i("Stopping searches before closing BLE connection...");
@@ -139,7 +141,11 @@ class _DeviceDetailsScreenState extends State<DeviceDetailsScreen> {
       _antDevices.clear(); // Clear the list before starting new search
     });
     
-    _antService.startAntSearch(widget.device).listen((antDevice) {
+    // Cancel any existing subscription
+    _antSearchSubscription?.cancel();
+    
+    // Create new subscription
+    _antSearchSubscription = _antService.startAntSearch(widget.device).listen((antDevice) {
       if (mounted) {
         setState(() {
           // Add the new device to the list
@@ -148,6 +154,8 @@ class _DeviceDetailsScreenState extends State<DeviceDetailsScreen> {
           _antDevices.sort((a, b) => b['rssi'].compareTo(a['rssi']));
         });
       }
+    }, onError: (e) {
+      log.e("Error in ANT+ search: $e");
     });
   }
 
@@ -588,6 +596,7 @@ class _DeviceDetailsScreenState extends State<DeviceDetailsScreen> {
   Future<void> _cleanupConnections() async {
     try {
       if (_dataSourceType == DataSourceType.antDevice) {
+        _antSearchSubscription?.cancel();
         await _antService.stopAntSearch(widget.device); // ✅ Stop ANT+ scanning first
       } else {
         _keiserScanSubscription?.cancel();
@@ -888,48 +897,64 @@ class _DeviceDetailsScreenState extends State<DeviceDetailsScreen> {
   }
 
   Widget _buildAntDevicesList() {
-    return _antDevices.isEmpty
-        ? const Center(child: CircularProgressIndicator())
-        : ListView.builder(
-            itemCount: _antDevices.length,
-            itemBuilder: (context, index) {
-              final antDevice = _antDevices[index];
-              return ListTile(
-                title: Text("Device ID: ${antDevice['deviceId']}"),
-                subtitle: Text("RSSI: ${antDevice['rssi']} dBm"),
-                trailing: ElevatedButton(
-                  onPressed: () => _saveSelectedAntDevice(antDevice['deviceId']),
-                  child: const Text("Select"),
-                ),
-              );
-            },
-          );
+    return RefreshIndicator(
+      onRefresh: () async {
+        setState(() {
+          _antDevices.clear();
+        });
+        _startAntSearch();
+      },
+      child: _antDevices.isEmpty
+          ? const Center(child: CircularProgressIndicator())
+          : ListView.builder(
+              itemCount: _antDevices.length,
+              itemBuilder: (context, index) {
+                final antDevice = _antDevices[index];
+                return ListTile(
+                  title: Text("Device ID: ${antDevice['deviceId']}"),
+                  subtitle: Text("RSSI: ${antDevice['rssi']} dBm"),
+                  trailing: ElevatedButton(
+                    onPressed: () => _saveSelectedAntDevice(antDevice['deviceId']),
+                    child: const Text("Select"),
+                  ),
+                );
+              },
+            ),
+    );
   }
 
   Widget _buildKeiserDevicesList() {
-    return _keiserDevices.isEmpty
-        ? const Center(child: CircularProgressIndicator())
-        : ListView.builder(
-            itemCount: _keiserDevices.length,
-            itemBuilder: (context, index) {
-              final keiserDevice = _keiserDevices[index];
-              return ListTile(
-                title: Text("${keiserDevice['name']}"),
-                subtitle: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text("RSSI: ${keiserDevice['rssi']} dBm"),
-                    Text("Equipment ID: ${keiserDevice['equipmentId']}"),
-                    Text("MAC: ${keiserDevice['macAddress']}"),
-                  ],
-                ),
-                isThreeLine: true,
-                trailing: ElevatedButton(
-                  onPressed: () => _saveSelectedKeiserDevice(keiserDevice),
-                  child: const Text("Select"),
-                ),
-              );
-            },
-          );
+    return RefreshIndicator(
+      onRefresh: () async {
+        setState(() {
+          _keiserDevices.clear();
+        });
+        _startKeiserSearch();
+      },
+      child: _keiserDevices.isEmpty
+          ? const Center(child: CircularProgressIndicator())
+          : ListView.builder(
+              itemCount: _keiserDevices.length,
+              itemBuilder: (context, index) {
+                final keiserDevice = _keiserDevices[index];
+                return ListTile(
+                  title: Text("${keiserDevice['name']}"),
+                  subtitle: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text("RSSI: ${keiserDevice['rssi']} dBm"),
+                      Text("Equipment ID: ${keiserDevice['equipmentId']}"),
+                      Text("MAC: ${keiserDevice['macAddress']}"),
+                    ],
+                  ),
+                  isThreeLine: true,
+                  trailing: ElevatedButton(
+                    onPressed: () => _saveSelectedKeiserDevice(keiserDevice),
+                    child: const Text("Select"),
+                  ),
+                );
+              },
+            ),
+    );
   }
 }
