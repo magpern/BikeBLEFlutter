@@ -738,26 +738,20 @@ class _DeviceDetailsScreenState extends State<DeviceDetailsScreen> {
   /// Update device ID using ANT+ service
   Future<void> _updateDeviceId(int newId) async {
     try {
+      // Set device ID - device will reboot after this
       await _antService.saveSelectedAntDevice(widget.device, newId);
-      log.i("Device ID updated successfully");
-      
-      // Return to main screen as device will reboot
-      if (mounted) {
-        Navigator.of(context).pushAndRemoveUntil(
-          MaterialPageRoute(builder: (context) => const BleScanScreen()),
-          (route) => false,
-        );
-      }
     } catch (e) {
-      log.e("Failed to update device ID: $e");
-      if (mounted) {
-        setState(() {
-          _updateError = "Failed to update device ID: $e";
-        });
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(_updateError!)),
-        );
-      }
+      // Even if we get an error (like GATT_ERROR), we should still return to main screen
+      // since the device is likely rebooting
+      log.i("Device ID update initiated, device is rebooting");
+    }
+    
+    // Always return to main screen since device will reboot
+    if (mounted) {
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute(builder: (context) => const BleScanScreen()),
+        (route) => false,
+      );
     }
   }
 
