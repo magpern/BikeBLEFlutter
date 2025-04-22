@@ -95,10 +95,10 @@ jobs:
         run: |
           # Get the tag name without 'v' prefix
           TAG=$(echo ${{ github.ref }} | sed 's/refs\/tags\///' | sed 's/^v//')
-          # Update QR code placeholder - using a more precise sed pattern
-          sed -i 's|<div class="qr-placeholder" id="qr-code">.*</div>|<div class="qr-placeholder" id="qr-code"><img src="qrcode.png?v='$TAG'" alt="QR Code for App Download"></div>|g' docs/index.html
+          # Update QR code image source
+          sed -i "s|src=\"qrcode.png.*\"|src=\"qrcode.png?v=$TAG\"|g" docs/index.html
           # Update download link
-          sed -i "s|https://github.com/magpern/Bike2FTMS/releases/latest/download/BikeBLE_Config-.*.apk|https://github.com/magpern/BikeBLEFlutter/releases/latest/download/BikeBLE_Config-${{ steps.version.outputs.version }}.apk|g" docs/index.html
+          sed -i "s|href=\"https://github.com/magpern/BikeBLEFlutter/releases/latest/download/BikeBLE_Config-.*.apk\"|href=\"https://github.com/magpern/BikeBLEFlutter/releases/latest/download/BikeBLE_Config-${{ steps.version.outputs.version }}.apk\"|g" docs/index.html
           # Update version number
           sed -i "s|<span id=\"version-number\">.*</span>|<span id=\"version-number\">$TAG</span>|g" docs/index.html
           
