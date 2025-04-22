@@ -38,7 +38,11 @@ class _DeviceDetailsScreenState extends State<DeviceDetailsScreen> {
   double _updateProgress = 0.0;
   String _updateState = '';
   final List<Map<String, dynamic>> _antDevices = [];
+  final List<Map<String, dynamic>> _keiserDevices = [];
+  DataSourceType _dataSourceType = DataSourceType.antDevice;
+  String _macAddress = "Unknown";
   StreamSubscription? _firmwareUpdateProgressSubscription;
+  StreamSubscription? _keiserScanSubscription;
   final _deviceNameRegex = RegExp(r'^[A-Za-z0-9]{1,8}$');
   StreamSubscription<int>? _rssiSubscription;
 
@@ -51,9 +55,10 @@ class _DeviceDetailsScreenState extends State<DeviceDetailsScreen> {
   @override
   void dispose() {
     _rssiSubscription?.cancel();
+    _keiserScanSubscription?.cancel();
     if (!_isUpdatingFirmware) {
       _firmwareUpdateProgressSubscription?.cancel();
-      log.i("Stopping ANT+ search before closing BLE connection...");
+      log.i("Stopping searches before closing BLE connection...");
       
       // Stop ANT+ search and disconnect BLE in a fire-and-forget manner
       _cleanupConnections();
@@ -72,6 +77,8 @@ class _DeviceDetailsScreenState extends State<DeviceDetailsScreen> {
       final deviceInfo = await _antService.getDeviceInfo(widget.device);
       final deviceName = deviceInfo["deviceName"];
       final deviceId = deviceInfo["deviceId"];
+      final dataSourceType = deviceInfo["dataSourceType"];
+      final macAddress = deviceInfo["macAddress"];
 
       // ✅ 3. Read Battery Level
       final batteryStatus = await _antService.getBatteryLevel(widget.device);
@@ -91,14 +98,22 @@ class _DeviceDetailsScreenState extends State<DeviceDetailsScreen> {
           _deviceName = deviceName;
           _batteryStatus = batteryStatus;
           _deviceId = deviceId;
+          _dataSourceType = dataSourceType is DataSourceType ? dataSourceType : DataSourceType.antDevice;
+          _macAddress = macAddress;
           _currentFirmwareVersion = currentVersion;
           _hardwareVersion = hardwareVersion;
           _isFetchingData = false;
         });
       }
 
-      // ✅ 7. Start ANT+ Device Search After Everything is Done
-      _startAntSearch();
+      // Start device search based on data source type
+      if (_dataSourceType == DataSourceType.antDevice) {
+        // Start ANT+ search for ANT device mode
+        _startAntSearch();
+      } else if (_dataSourceType == DataSourceType.keiserM3i) {
+        // Start Keiser M3 device search for Keiser mode
+        _startKeiserSearch();
+      }
 
       // ✅ 8. Check for firmware updates in background
       _checkForUpdates();
@@ -109,6 +124,7 @@ class _DeviceDetailsScreenState extends State<DeviceDetailsScreen> {
           _deviceName = "Connection Failed";
           _batteryStatus = "Unknown";
           _deviceId = "Unknown";
+          _macAddress = "Unknown";
           _currentFirmwareVersion = "Unknown";
           _hardwareVersion = "Unknown";
           _isFetchingData = false;
@@ -130,6 +146,36 @@ class _DeviceDetailsScreenState extends State<DeviceDetailsScreen> {
           _antDevices.add(antDevice);
           // Sort the list by RSSI (strongest signal first)
           _antDevices.sort((a, b) => b['rssi'].compareTo(a['rssi']));
+        });
+      }
+    });
+  }
+
+  /// Start Keiser M3 Device Search
+  void _startKeiserSearch() {
+    setState(() {
+      _keiserDevices.clear(); // Clear the list before starting new search
+    });
+    
+    _keiserScanSubscription?.cancel();
+    _keiserScanSubscription = _antService.scanForKeiserM3Devices().listen((keiserDevice) {
+      if (mounted) {
+        setState(() {
+          // Check if device already exists in the list by MAC address
+          final existingIndex = _keiserDevices.indexWhere(
+            (d) => d['macAddress'] == keiserDevice['macAddress']
+          );
+          
+          if (existingIndex >= 0) {
+            // Update existing entry
+            _keiserDevices[existingIndex] = keiserDevice;
+          } else {
+            // Add new entry
+            _keiserDevices.add(keiserDevice);
+          }
+          
+          // Sort the list by RSSI (strongest signal first)
+          _keiserDevices.sort((a, b) => b['rssi'].compareTo(a['rssi']));
         });
       }
     });
@@ -193,6 +239,175 @@ class _DeviceDetailsScreenState extends State<DeviceDetailsScreen> {
         );
       },
     );
+  }
+
+  /// Save Selected Keiser M3 Device
+  void _saveSelectedKeiserDevice(Map<String, dynamic> keiserDevice) async {
+    final navigatorState = Navigator.of(context);
+    
+    showDialog(
+      context: context,
+      builder: (BuildContext dialogContext) {
+        return AlertDialog(
+          title: const Text("Confirm Selection"),
+          content: Text(
+            "Are you sure you want to save Keiser M3?\n"
+            "Name: ${keiserDevice['name']}\n"
+            "Equipment ID: ${keiserDevice['equipmentId']}\n"
+            "MAC: ${keiserDevice['macAddress']}"
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                navigatorState.pop(); // Close dialog
+              },
+              child: const Text("Cancel"),
+            ),
+            TextButton(
+              onPressed: () async {
+                navigatorState.pop(); // Close dialog first
+
+                try {
+                  // Stop scanning
+                  _keiserScanSubscription?.cancel();
+                  await FlutterBluePlus.stopScan();
+
+                  // Save all the Keiser device info to the bike
+                  await _antService.setDeviceInfo(
+                    widget.device, 
+                    deviceId: keiserDevice['equipmentId'] ?? 0,
+                    deviceName: _deviceName, // Keep the current device name
+                    dataSourceType: DataSourceType.keiserM3i,
+                    macAddress: keiserDevice['macAddress'],
+                  );
+                  
+                  log.i("Keiser M3 device info saved successfully!");
+
+                  // Navigate back to previous screen after successful save
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text("Keiser device saved successfully"),
+                        duration: Duration(seconds: 1),
+                      ),
+                    );
+                    await Future.delayed(const Duration(milliseconds: 500));
+                    navigatorState.pop(); // Return to previous screen
+                  }
+                } catch (e) {
+                  log.e("Failed to save Keiser M3 Device: $e");
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text("Failed to save device"),
+                        duration: Duration(seconds: 2),
+                      ),
+                    );
+                  }
+                }
+              },
+              child: const Text("Save"),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  /// Set bike type (data source type)
+  void _showSetBikeTypeDialog() {
+    showDialog(
+      context: context,
+      builder: (BuildContext dialogContext) {
+        return AlertDialog(
+          title: const Text("Set Bike Type"),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                title: const Text("ANT+ Device"),
+                subtitle: const Text("For ANT+ compatible exercise bikes"),
+                selected: _dataSourceType == DataSourceType.antDevice,
+                onTap: () async {
+                  Navigator.pop(dialogContext);
+                  await _setBikeType(DataSourceType.antDevice);
+                },
+              ),
+              ListTile(
+                title: const Text("Keiser M3i"),
+                subtitle: const Text("For Keiser M3i exercise bikes"),
+                selected: _dataSourceType == DataSourceType.keiserM3i,
+                onTap: () async {
+                  Navigator.pop(dialogContext);
+                  await _setBikeType(DataSourceType.keiserM3i);
+                },
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.pop(dialogContext);
+              },
+              child: const Text("Cancel"),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  /// Set bike type
+  Future<void> _setBikeType(DataSourceType bikeType) async {
+    try {
+      // Stop any current scanning
+      if (bikeType == DataSourceType.antDevice) {
+        _keiserScanSubscription?.cancel();
+        await FlutterBluePlus.stopScan();
+      } else {
+        try {
+          await _antService.stopAntSearch(widget.device);
+        } catch (e) {
+          log.e("Error stopping ANT+ search: $e");
+        }
+      }
+
+      // Set the new bike type
+      await _antService.setDeviceInfo(
+        widget.device,
+        deviceId: int.tryParse(_deviceId) ?? 0,
+        deviceName: _deviceName,
+        dataSourceType: bikeType,
+        macAddress: _macAddress,
+      );
+
+      // Update state
+      setState(() {
+        _dataSourceType = bikeType;
+        if (bikeType == DataSourceType.antDevice) {
+          _antDevices.clear();
+          _startAntSearch();
+        } else {
+          _keiserDevices.clear();
+          _startKeiserSearch();
+        }
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text("Bike type set to ${bikeType.toString()}"),
+          duration: const Duration(seconds: 1),
+        ),
+      );
+    } catch (e) {
+      log.e("Failed to set bike type: $e");
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text("Failed to set bike type: $e"),
+          duration: const Duration(seconds: 2),
+        ),
+      );
+    }
   }
 
   /// Check for firmware updates in background
@@ -372,9 +587,14 @@ class _DeviceDetailsScreenState extends State<DeviceDetailsScreen> {
   // Separate method to handle the async cleanup
   Future<void> _cleanupConnections() async {
     try {
-      await _antService.stopAntSearch(widget.device); // ✅ Stop ANT+ scanning first
+      if (_dataSourceType == DataSourceType.antDevice) {
+        await _antService.stopAntSearch(widget.device); // ✅ Stop ANT+ scanning first
+      } else {
+        _keiserScanSubscription?.cancel();
+        await FlutterBluePlus.stopScan();
+      }
     } catch (e) {
-      log.e("Failed to stop ANT+ search: $e");
+      log.e("Failed to stop scanning: $e");
     }
 
     log.i("Disconnecting BLE connection...");
@@ -476,25 +696,14 @@ class _DeviceDetailsScreenState extends State<DeviceDetailsScreen> {
   /// Update device name in characteristic 0x1524
   Future<void> _updateDeviceName(String newName) async {
     try {
-      final services = await widget.device.discoverServices();
-      final service = services.firstWhere(
-        (s) => s.serviceUuid == Guid("00001523-0000-1000-8000-00805f9b34fb"),
+      await _antService.setDeviceInfo(
+        widget.device,
+        deviceId: int.tryParse(_deviceId) ?? 0,
+        deviceName: newName,
+        dataSourceType: _dataSourceType,
+        macAddress: _macAddress,
       );
       
-      final characteristic = service.characteristics.firstWhere(
-        (c) => c.characteristicUuid == Guid("00001524-0000-1000-8000-00805f9b34fb"),
-      );
-
-      // Convert current device ID to bytes
-      final deviceId = int.tryParse(_deviceId) ?? 0;
-      final List<int> value = [
-        deviceId & 0xFF,
-        (deviceId >> 8) & 0xFF,
-        newName.length,
-        ...newName.codeUnits
-      ];
-
-      await characteristic.write(value, withoutResponse: false);
       log.i("Device name updated successfully");
       
       // Return to main screen as device will reboot
@@ -573,6 +782,9 @@ class _DeviceDetailsScreenState extends State<DeviceDetailsScreen> {
                 case 'edit_id':
                   _showEditDeviceIdDialog();
                   break;
+                case 'set_bike_type':
+                  _showSetBikeTypeDialog();
+                  break;
               }
             },
             itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
@@ -583,6 +795,10 @@ class _DeviceDetailsScreenState extends State<DeviceDetailsScreen> {
               const PopupMenuItem<String>(
                 value: 'edit_id',
                 child: Text('Edit Device ID'),
+              ),
+              const PopupMenuItem<String>(
+                value: 'set_bike_type',
+                child: Text('Set Bike Type'),
               ),
             ],
           ),
@@ -628,6 +844,9 @@ class _DeviceDetailsScreenState extends State<DeviceDetailsScreen> {
                       Text("🔋 Battery: $_batteryStatus", style: const TextStyle(fontSize: 18)),
                       Text("📶 Signal Strength: $_bleRssi dBm", style: const TextStyle(fontSize: 18)),
                       Text("🔢 Current Device ID: $_deviceId", style: const TextStyle(fontSize: 18)),
+                      Text("🚲 Bike Type: ${_dataSourceType.toString()}", style: const TextStyle(fontSize: 18)),
+                      if (_dataSourceType == DataSourceType.keiserM3i) 
+                        Text("📱 MAC Address: $_macAddress", style: const TextStyle(fontSize: 18)),
                       Text("📱 Firmware Version: $_currentFirmwareVersion", style: const TextStyle(fontSize: 18)),
                       Text("🖥 Hardware Version: $_hardwareVersion", style: const TextStyle(fontSize: 18)),
                       if (_isUpdatingFirmware) ...[
@@ -653,29 +872,64 @@ class _DeviceDetailsScreenState extends State<DeviceDetailsScreen> {
                   ),
             if (!_isUpdatingFirmware) ...[
               const SizedBox(height: 20),
-              const Text("🔍 Found ANT+ Devices:", style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+              _dataSourceType == DataSourceType.antDevice
+                  ? const Text("🔍 Found ANT+ Devices:", style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold))
+                  : const Text("🔍 Found Keiser M3 Devices:", style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
               Expanded(
-                child: _antDevices.isEmpty
-                    ? const Center(child: CircularProgressIndicator())
-                    : ListView.builder(
-                        itemCount: _antDevices.length,
-                        itemBuilder: (context, index) {
-                          final antDevice = _antDevices[index];
-                          return ListTile(
-                            title: Text("Device ID: ${antDevice['deviceId']}"),
-                            subtitle: Text("RSSI: ${antDevice['rssi']} dBm"),
-                            trailing: ElevatedButton(
-                              onPressed: () => _saveSelectedAntDevice(antDevice['deviceId']),
-                              child: const Text("Select"),
-                            ),
-                          );
-                        },
-                      ),
+                child: _dataSourceType == DataSourceType.antDevice
+                    ? _buildAntDevicesList()
+                    : _buildKeiserDevicesList(),
               ),
             ],
           ],
         ),
       ),
     );
+  }
+
+  Widget _buildAntDevicesList() {
+    return _antDevices.isEmpty
+        ? const Center(child: CircularProgressIndicator())
+        : ListView.builder(
+            itemCount: _antDevices.length,
+            itemBuilder: (context, index) {
+              final antDevice = _antDevices[index];
+              return ListTile(
+                title: Text("Device ID: ${antDevice['deviceId']}"),
+                subtitle: Text("RSSI: ${antDevice['rssi']} dBm"),
+                trailing: ElevatedButton(
+                  onPressed: () => _saveSelectedAntDevice(antDevice['deviceId']),
+                  child: const Text("Select"),
+                ),
+              );
+            },
+          );
+  }
+
+  Widget _buildKeiserDevicesList() {
+    return _keiserDevices.isEmpty
+        ? const Center(child: CircularProgressIndicator())
+        : ListView.builder(
+            itemCount: _keiserDevices.length,
+            itemBuilder: (context, index) {
+              final keiserDevice = _keiserDevices[index];
+              return ListTile(
+                title: Text("${keiserDevice['name']}"),
+                subtitle: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text("RSSI: ${keiserDevice['rssi']} dBm"),
+                    Text("Equipment ID: ${keiserDevice['equipmentId']}"),
+                    Text("MAC: ${keiserDevice['macAddress']}"),
+                  ],
+                ),
+                isThreeLine: true,
+                trailing: ElevatedButton(
+                  onPressed: () => _saveSelectedKeiserDevice(keiserDevice),
+                  child: const Text("Select"),
+                ),
+              );
+            },
+          );
   }
 }

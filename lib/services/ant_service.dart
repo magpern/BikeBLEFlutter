@@ -151,6 +151,76 @@ class AntService {
     }
   }
 
+  /// Set Device Info to `0x1524` (Write)
+  Future<bool> setDeviceInfo(BluetoothDevice device, {
+    required int deviceId,
+    required String deviceName,
+    required DataSourceType dataSourceType,
+    String? macAddress
+  }) async {
+    try {
+      log.i("Setting Device Info (ID, Name, Type, MAC)...");
+      await connectDevice(device);
+      
+      final services = await device.discoverServices();
+      final service = services.firstWhere(
+        (s) => s.serviceUuid == Guid("00001523-0000-1000-8000-00805f9b34fb"),
+      );
+      
+      final characteristic = service.characteristics.firstWhere(
+        (c) => c.characteristicUuid == Guid("00001524-0000-1000-8000-00805f9b34fb"),
+      );
+
+      // Validate device name length
+      if (deviceName.length > 30) { // BLE_NAME_MAX_LEN is typically 30-31
+        deviceName = deviceName.substring(0, 30);
+        log.w("Device name truncated to 30 characters");
+      }
+      
+      // Create payload
+      List<int> payload = [];
+      
+      // Device ID (2 bytes)
+      payload.add(deviceId & 0xFF);
+      payload.add((deviceId >> 8) & 0xFF);
+      
+      // Name length and name
+      payload.add(deviceName.length);
+      payload.addAll(deviceName.codeUnits);
+      
+      // Data source type
+      payload.add(dataSourceType.value);
+      
+      // MAC address (if provided)
+      if (macAddress != null && macAddress != "Unknown") {
+        // Convert MAC address from string format (xx:xx:xx:xx:xx:xx) to bytes
+        List<String> macParts = macAddress.split(':');
+        if (macParts.length == 6) {
+          for (String part in macParts) {
+            payload.add(int.parse(part, radix: 16));
+          }
+        } else {
+          // Add zeros if MAC is invalid
+          payload.addAll(List.filled(6, 0));
+          log.w("Invalid MAC address format, using zeros");
+        }
+      } else {
+        // Add zeros if no MAC is provided
+        payload.addAll(List.filled(6, 0));
+      }
+      
+      log.i("Writing Device Info - ID: $deviceId, Name: $deviceName, " +
+            "Data Source: ${dataSourceType.toString()}, MAC: ${macAddress ?? 'None'}");
+      
+      await characteristic.write(payload, withoutResponse: false);
+      log.i("Successfully wrote device info!");
+      return true;
+    } catch (e) {
+      log.e("Failed to write device info: $e");
+      return false;
+    }
+  }
+
   /// Start ANT+ Search (0x01 to 0x1601, listen on 0x1602)
   Stream<Map<String, dynamic>> startAntSearch(BluetoothDevice device) async* {
     try {
@@ -403,4 +473,64 @@ class AntService {
 
   /// Get Firmware Update Progress Stream
   Stream<DfuProgressState> get firmwareUpdateProgress => _dfuService.progressStream;
+  
+  /// Scan for Keiser M3 devices
+  Stream<Map<String, dynamic>> scanForKeiserM3Devices() async* {
+    try {
+      log.i("Starting scan for Keiser M3 devices...");
+      
+      // Check if Bluetooth is turned on
+      if (await FlutterBluePlus.isAvailable == false) {
+        log.e("Bluetooth is not available");
+        return;
+      }
+      
+      // Start scanning
+      await FlutterBluePlus.startScan(
+        timeout: const Duration(seconds: 15),
+        androidUsesFineLocation: false,
+      );
+      
+      // Listen for scan results
+      await for (final result in FlutterBluePlus.scanResults) {
+        for (ScanResult r in result) {
+          // Filter for Keiser M3 devices (name starts with "M3")
+          if (r.device.platformName.startsWith("M3")) {
+            // Extract equipment ID from advertising data if available
+            int equipmentId = 0;
+            String macAddress = r.device.remoteId.str;
+            
+            // Parse manufacturer-specific data
+            if (r.advertisementData.manufacturerData.isNotEmpty) {
+              // The equipment ID is typically in the 4th byte of manufacturer data
+              // This might need adjustment based on actual data format
+              for (List<int> data in r.advertisementData.manufacturerData.values) {
+                if (data.length >= 4) {
+                  equipmentId = data[3];
+                  break;
+                }
+              }
+            }
+            
+            log.i("Found Keiser M3 - Name: ${r.device.platformName}, MAC: $macAddress, RSSI: ${r.rssi}, Equipment ID: $equipmentId");
+            
+            yield {
+              "device": r.device,
+              "name": r.device.platformName,
+              "rssi": r.rssi,
+              "equipmentId": equipmentId,
+              "macAddress": macAddress,
+            };
+          }
+        }
+      }
+      
+      // Stop scanning
+      await FlutterBluePlus.stopScan();
+      log.i("Scan for Keiser M3 devices completed.");
+    } catch (e) {
+      log.e("Error scanning for Keiser M3 devices: $e");
+      await FlutterBluePlus.stopScan();
+    }
+  }
 }
